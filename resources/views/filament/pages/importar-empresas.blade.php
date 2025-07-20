@@ -24,9 +24,10 @@
         <!-- Exemplo -->
         <div class="bg-gray-50 dark:bg-gray-900/20 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
             <h4 class="text-sm font-medium text-gray-800 dark:text-gray-200 mb-2">💡 Exemplo de CSV:</h4>
-            <pre class="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded border text-gray-700 dark:text-gray-300">27390230000160;ATACADAO COMPRE BEM LTDA;ATACADAO COMPRE BEM;247294047;;
-407959000227;ALMIR R DA SILVA LTDA;ALMIR R DA SILVA LTDA;244047782;;
-407959000146;ALMIR R DA SILVA LTDA;ALMIR R DA SILVA LTDA;240945700;;</pre>
+            <pre class="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded border text-gray-700 dark:text-gray-300">12345678000199;SUPERMERCADO EXEMPLO LTDA;SUPERMERCADO EXEMPLO;100200300;;
+98765432000987;LOJA DE TESTE LTDA;LOJA DE TESTE;200300400;;
+45678912000456;MERCADO GENÉRICO SA;MERCADO GENÉRICO;300400500;;
+</pre>
         </div>
 
         <!-- Formulário -->

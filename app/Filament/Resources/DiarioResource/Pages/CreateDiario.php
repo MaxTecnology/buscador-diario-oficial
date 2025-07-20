@@ -4,6 +4,7 @@ namespace App\Filament\Resources\DiarioResource\Pages;
 
 use App\Filament\Resources\DiarioResource;
 use App\Services\PdfProcessorService;
+use App\Models\ActivityLog;
 use Filament\Actions;
 use Filament\Resources\Pages\CreateRecord;
 use Filament\Notifications\Notification;
@@ -72,6 +73,9 @@ class CreateDiario extends CreateRecord
     protected function afterCreate(): void
     {
         $diario = $this->record;
+        
+        // Registrar log de atividade
+        ActivityLog::logDiarioCreated($diario);
         
         if ($diario->caminho_arquivo) {
             // Verificar se deve processar de forma síncrona ou assíncrona

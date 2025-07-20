@@ -356,97 +356,98 @@ class OcorrenciaResource extends Resource
             ], layout: Tables\Enums\FiltersLayout::AboveContentCollapsible)
             ->actions([
                 Tables\Actions\ActionGroup::make([
-                    Tables\Actions\Action::make('notificar_email')
-                        ->label('Enviar Email')
-                        ->icon('heroicon-o-envelope')
-                        ->color('success')
-                        ->visible(fn ($record) => !$record->notificado_email)
-                        ->requiresConfirmation()
-                        ->modalHeading('Enviar Notificação por Email')
-                        ->modalDescription('Deseja enviar uma notificação por email para os usuários desta empresa?')
-                        ->action(function ($record) {
-                            $notificacaoService = app(\App\Services\NotificacaoService::class);
-                            $resultado = $notificacaoService->notificarOcorrencia($record, true);
+                    Tables\Actions\Action::make('enviar_notificacoes')
+                        ->label('Enviar Notificações')
+                        ->icon('heroicon-o-bell')
+                        ->color('primary')
+                        ->form([
+                            Forms\Components\Section::make('Selecionar Usuários e Tipos de Notificação')
+                                ->schema([
+                                    Forms\Components\Repeater::make('usuarios_notificacao')
+                                        ->label('Usuários para Notificar')
+                                        ->schema([
+                                            Forms\Components\Select::make('user_id')
+                                                ->label('Usuário')
+                                                ->options(function ($get, $livewire) {
+                                                    $record = $livewire->getRecord();
+                                                    return $record->empresa->users->mapWithKeys(function ($user) {
+                                                        $nome = $user->nome ?? $user->name ?? 'Sem nome';
+                                                        $email = $user->email;
+                                                        $telefone = $user->telefone_whatsapp ? " | WhatsApp: {$user->telefone_whatsapp}" : '';
+                                                        return [$user->id => "{$nome} ({$email}){$telefone}"];
+                                                    })->toArray();
+                                                })
+                                                ->required()
+                                                ->searchable(),
+                                            Forms\Components\CheckboxList::make('tipos')
+                                                ->label('Tipos de Notificação')
+                                                ->options([
+                                                    'email' => 'Email',
+                                                    'whatsapp' => 'WhatsApp',
+                                                ])
+                                                ->required()
+                                                ->columns(2),
+                                        ])
+                                        ->defaultItems(function ($livewire) {
+                                            $record = $livewire->getRecord();
+                                            return $record->empresa->users->map(function ($user) {
+                                                $tipos = [];
+                                                if ($user->pivot->notificacao_email) $tipos[] = 'email';
+                                                if ($user->pivot->notificacao_whatsapp) $tipos[] = 'whatsapp';
+                                                
+                                                return [
+                                                    'user_id' => $user->id,
+                                                    'tipos' => $tipos,
+                                                ];
+                                            })->toArray();
+                                        })
+                                        ->minItems(1)
+                                        ->addActionLabel('Adicionar Usuário')
+                                        ->columns(2),
+                                ])
+                        ])
+                        ->action(function (array $data, $record) {
+                            $resultados = ['email' => 0, 'whatsapp' => 0, 'erros' => []];
                             
-                            if ($resultado['email']) {
+                            foreach ($data['usuarios_notificacao'] as $usuarioNotif) {
+                                $user = \App\Models\User::find($usuarioNotif['user_id']);
+                                if (!$user) continue;
+                                
+                                $notificationService = app(\App\Services\NotificacaoService::class);
+                                
+                                foreach ($usuarioNotif['tipos'] as $tipo) {
+                                    if ($tipo === 'email') {
+                                        $enviadoEmail = $notificationService->enviarEmailParaUsuario($record, $user);
+                                        if ($enviadoEmail) $resultados['email']++;
+                                    } elseif ($tipo === 'whatsapp') {
+                                        $enviadoWhatsapp = $notificationService->enviarWhatsAppParaUsuario($record, $user);
+                                        if ($enviadoWhatsapp) $resultados['whatsapp']++;
+                                    }
+                                }
+                            }
+                            
+                            $mensagens = [];
+                            if ($resultados['email'] > 0) $mensagens[] = "{$resultados['email']} email(s)";
+                            if ($resultados['whatsapp'] > 0) $mensagens[] = "{$resultados['whatsapp']} WhatsApp(s)";
+                            
+                            if (!empty($mensagens)) {
                                 \Filament\Notifications\Notification::make()
-                                    ->title('Email Enviado!')
-                                    ->body('Notificação enviada com sucesso.')
+                                    ->title('Notificações Enviadas!')
+                                    ->body('Enviado: ' . implode(' e ', $mensagens))
                                     ->success()
                                     ->send();
+                                    
+                                // Atualizar flags de notificação
+                                if ($resultados['email'] > 0) $record->marcarComoNotificadoPorEmail();
+                                if ($resultados['whatsapp'] > 0) $record->marcarComoNotificadoPorWhatsapp();
                             } else {
                                 \Filament\Notifications\Notification::make()
-                                    ->title('Erro no Envio')
-                                    ->body('Não foi possível enviar o email.')
-                                    ->danger()
+                                    ->title('Nenhuma Notificação Enviada')
+                                    ->body('Verifique as configurações dos usuários.')
+                                    ->warning()
                                     ->send();
                             }
-                        }),
-                        
-                    Tables\Actions\Action::make('notificar_whatsapp')
-                        ->label('Enviar WhatsApp')
-                        ->icon('heroicon-o-chat-bubble-left-right')
-                        ->color('success')
-                        ->visible(fn ($record) => !$record->notificado_whatsapp)
-                        ->requiresConfirmation()
-                        ->modalHeading('Enviar Notificação por WhatsApp')
-                        ->modalDescription('Deseja enviar uma notificação por WhatsApp para os usuários desta empresa?')
-                        ->action(function ($record) {
-                            $notificacaoService = app(\App\Services\NotificacaoService::class);
-                            $resultado = $notificacaoService->notificarOcorrencia($record, true);
-                            
-                            if ($resultado['whatsapp']) {
-                                \Filament\Notifications\Notification::make()
-                                    ->title('WhatsApp Enviado!')
-                                    ->body('Notificação enviada com sucesso.')
-                                    ->success()
-                                    ->send();
-                            } else {
-                                \Filament\Notifications\Notification::make()
-                                    ->title('Erro no Envio')
-                                    ->body('Não foi possível enviar o WhatsApp.')
-                                    ->danger()
-                                    ->send();
-                            }
-                        }),
-                        
-                    Tables\Actions\Action::make('reenviar_notificacoes')
-                        ->label('Reenviar Todas')
-                        ->icon('heroicon-o-arrow-path')
-                        ->color('warning')
-                        ->visible(fn ($record) => $record->notificado_email || $record->notificado_whatsapp)
-                        ->requiresConfirmation()
-                        ->modalHeading('Reenviar Notificações')
-                        ->modalDescription('Deseja reenviar todas as notificações (Email e WhatsApp) para esta ocorrência?')
-                        ->action(function ($record) {
-                            // Temporariamente marcar como não notificado para permitir reenvio
-                            $record->update([
-                                'notificado_email' => false,
-                                'notificado_whatsapp' => false,
-                                'notificado_em' => null,
-                            ]);
-                            
-                            $notificacaoService = app(\App\Services\NotificacaoService::class);
-                            $resultado = $notificacaoService->notificarOcorrencia($record, true);
-                            
-                            $enviados = [];
-                            if ($resultado['email']) $enviados[] = 'Email';
-                            if ($resultado['whatsapp']) $enviados[] = 'WhatsApp';
-                            
-                            if (!empty($enviados)) {
-                                \Filament\Notifications\Notification::make()
-                                    ->title('Notificações Reenviadas!')
-                                    ->body('Enviado: ' . implode(' e ', $enviados))
-                                    ->success()
-                                    ->send();
-                            } else {
-                                \Filament\Notifications\Notification::make()
-                                    ->title('Erro no Reenvio')
-                                    ->body('Não foi possível reenviar as notificações.')
-                                    ->danger()
-                                    ->send();
-                            }
-                        }),
+                        })
                 ])
                     ->label('Notificações')
                     ->icon('heroicon-o-bell')
@@ -459,10 +460,10 @@ class OcorrenciaResource extends Resource
                         ->icon('heroicon-o-bell')
                         ->color('success')
                         ->action(function ($records) {
-                            $notificacaoService = app(\App\Services\NotificacaoService::class);
+                            $notificationService = app(\App\Services\NotificacaoService::class);
                             $ocorrenciaIds = $records->pluck('id')->toArray();
                             
-                            $resultados = $notificacaoService->notificarMultiplasOcorrencias($ocorrenciaIds, true);
+                            $resultados = $notificationService->notificarMultiplasOcorrencias($ocorrenciaIds, true);
                             
                             $totalEnviados = 0;
                             foreach ($resultados as $resultado) {

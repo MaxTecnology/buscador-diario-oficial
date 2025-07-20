@@ -71,10 +71,6 @@ class UserResource extends Resource
                         Forms\Components\Toggle::make('pode_fazer_login')
                             ->label('Pode fazer login')
                             ->default(true),
-                        Forms\Components\Toggle::make('aceita_whatsapp')
-                            ->label('Aceita WhatsApp')
-                            ->default(true)
-                            ->helperText('Usuário aceita receber notificações via WhatsApp'),
                         Forms\Components\Select::make('roles')
                             ->label('Papel')
                             ->relationship('roles', 'name')

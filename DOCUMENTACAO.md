@@ -106,16 +106,27 @@ Sistema web para monitorar empresas em diários oficiais brasileiros, com proces
 - ✅ Busca por prioridade: CNPJ > Inscrição Estadual > Nome > Variantes
 - ✅ Processamento manual otimizado (abordagem primária)
 
-### 11. **Sistema de Notificações Avançado**
-- ✅ Notificações por email e WhatsApp
-- ✅ Controle manual/automático por usuário
-- ✅ Botão para reenvio manual de notificações
+### 11. **Sistema de Notificações Granular (NOVO)**
+- ✅ **Controle granular por usuário e tipo de notificação**
+- ✅ **Interface de seleção individual**: escolha quais usuários e quais tipos (email/WhatsApp) para cada ocorrência
+- ✅ **Notificação automática DESABILITADA por padrão** - controle total do usuário
+- ✅ **Envio separado**: email e WhatsApp independentes por usuário
+- ✅ **Sistema de logs detalhado** com status correto (sucesso/falha)
 - ✅ Templates personalizados para cada tipo
 - ✅ Integração com Evolution API
-- ✅ Sistema de preferências por usuário
+- ✅ Sistema de preferências por usuário na tabela pivot
 - ✅ Controle de horário comercial
 
-### 12. **Interface Aprimorada para Alto Volume**
+### 12. **Sistema de Logs Imutáveis (NOVO)**
+- ✅ **Logs de notificações imutáveis** - não podem ser alterados após criação
+- ✅ **Rastreamento detalhado**: email e WhatsApp separados com timestamps
+- ✅ **Interface de visualização** dedicada com filtros e estatísticas
+- ✅ **Logs de auditoria do sistema** (Spatie ActivityLog)
+- ✅ **Correção de status**: sucesso/falha exibidos corretamente
+- ✅ **Contadores em tempo real** por tipo de notificação
+- ✅ **Histórico completo** de todas as tentativas de envio
+
+### 13. **Interface Aprimorada para Alto Volume**
 - ✅ Dashboard especializado com métricas em tempo real
 - ✅ Filtros avançados com emojis e toggles
 - ✅ Visualização compacta em cards responsivos
@@ -125,13 +136,74 @@ Sistema web para monitorar empresas em diários oficiais brasileiros, com proces
 - ✅ Estatísticas de performance e sucesso
 - ✅ Reprocessamento em lote para erros
 
-### 13. **Campos e Dados Aprimorados**
+### 14. **Campos e Dados Aprimorados**
 - ✅ Campo CNPJ nas ocorrências para melhor identificação
 - ✅ Contagem automática de páginas dos PDFs
 - ✅ Campos de notificação (email/WhatsApp) por ocorrência
 - ✅ Rastreamento de tentativas e erros de processamento
 - ✅ Timestamps de processamento e criação
 - ✅ Hash SHA256 para detecção de duplicatas
+
+---
+
+## 🎯 **NOVA FUNCIONALIDADE: Sistema de Controle Granular de Notificações**
+
+### **🔧 Mudanças Implementadas (Julho 2025)**
+
+#### **1. ✅ Controle Granular por Usuário**
+- **Interface de seleção individual**: Ao clicar em "Enviar Notificações" em uma ocorrência
+- **Lista todos os usuários** da empresa com seus dados (nome, email, telefone)
+- **Checkbox independente** para cada tipo: ☑️ Email | ☑️ WhatsApp
+- **Seleção flexível**: pode enviar só email, só WhatsApp, ou ambos para usuários diferentes
+
+#### **2. ✅ Notificação Automática Desabilitada**
+- **Por padrão, sistema NÃO envia notificações automaticamente** ao encontrar ocorrências
+- **Controle total do usuário**: você decide quando e para quem notificar
+- **Configuração**: `notificacao_automatica_apos_processamento = false`
+
+#### **3. ✅ Interface Simplificada**
+- **Um único botão**: "Enviar Notificações" (substitui botões separados)
+- **Modal intuitivo** com formulário de seleção
+- **Feedback detalhado**: mostra quantas notificações foram enviadas por tipo
+- **Validação**: não permite envio sem selecionar pelo menos um usuário
+
+#### **4. ✅ Logs Corrigidos**
+- **Status correto**: sucessos aparecem como ✅ Sucesso (não mais ❌ Falha)
+- **Contadores precisos**: estatísticas de email e WhatsApp separadas
+- **Filtros funcionais**: pode filtrar por tipo e status corretamente
+
+#### **5. ✅ Métodos Individuais no Service**
+```php
+// Novos métodos no NotificacaoService
+enviarEmailParaUsuario(Ocorrencia $ocorrencia, User $usuario): bool
+enviarWhatsAppParaUsuario(Ocorrencia $ocorrencia, User $usuario): bool
+```
+
+### **📋 Como Usar o Novo Sistema**
+
+#### **Passo a Passo:**
+1. **Vá para "Ocorrências"** no menu
+2. **Encontre a ocorrência** que deseja notificar
+3. **Clique no botão "Enviar Notificações"** (ícone de sino)
+4. **Selecione os usuários** da lista
+5. **Para cada usuário, marque**:
+   - ☑️ **Email** (se quiser enviar por email)
+   - ☑️ **WhatsApp** (se quiser enviar por WhatsApp)
+6. **Clique em "Enviar"**
+7. **Veja o feedback**: "Enviado: X email(s) e Y WhatsApp(s)"
+
+#### **Exemplos de Uso:**
+- **Notificar só o dono**: Seleciona 1 usuário, marca email e WhatsApp
+- **Notificar equipe por email**: Seleciona vários usuários, marca só email
+- **Notificar urgente por WhatsApp**: Seleciona usuários, marca só WhatsApp
+- **Notificar seletivo**: Alguns usuários por email, outros por WhatsApp
+
+### **💡 Benefícios da Nova Abordagem**
+- ✅ **Controle total**: Você decide quando, para quem e como notificar
+- ✅ **Flexibilidade**: Diferentes tipos para diferentes usuários
+- ✅ **Transparência**: Contador exato de notificações enviadas
+- ✅ **Economia**: Evita spam e notificações desnecessárias
+- ✅ **Precisão**: Logs corretos para auditoria
 
 ---
 
@@ -176,11 +248,40 @@ ocorrencias (id, empresa_id, diario_id, tipo_match, score, texto_match, pagina, 
 system_configs (id, chave, valor, tipo, descricao)
 ```
 
+### **📊 Sistema de Logs Organizado**
+
+#### **Menus de Logs Disponíveis:**
+
+1. **📋 Logs de Notificações** (`/admin/logs-notificacoes`)
+   - **Função**: Rastreia todos os envios de email e WhatsApp
+   - **Dados**: tipo, status, destinatário, empresa, mensagem de erro
+   - **Filtros**: por tipo (email/WhatsApp), status (sucesso/falha), data
+   - **Estatísticas**: contadores por tipo e status em tempo real
+
+2. **📜 Timeline de Atividades** (`/admin/logs-atividade`)
+   - **Função**: Logs básicos do sistema (login, logout, CRUD)
+   - **Dados**: ações simples de usuários
+   - **Interface**: timeline cronológica
+
+3. **🔍 Logs de Auditoria (Sistema)** (`/admin/logs-auditoria-spatie`)
+   - **Função**: Logs detalhados do Spatie ActivityLog
+   - **Dados**: criação, edição, exclusão de registros com detalhes
+   - **Filtros**: por evento (created/updated/deleted), tipo de objeto, data
+   - **Total**: ~3390 registros de auditoria automática
+
+#### **Características dos Logs:**
+- ✅ **Imutáveis**: Logs não podem ser alterados após criação
+- ✅ **Detalhados**: Incluem IP, usuário, timestamps, dados alterados
+- ✅ **Filtráveis**: Interfaces com filtros avançados
+- ✅ **Estatísticas**: Contadores em tempo real
+- ✅ **Organizados**: Separados por função e tipo
+
 ### **Relacionamentos**
-- `users` ↔ `empresas` (many-to-many via `empresa_user`)
+- `users` ↔ `empresas` (many-to-many via `user_empresa_permissions`)
 - `empresas` → `ocorrencias` (one-to-many)
 - `diarios` → `ocorrencias` (one-to-many)
 - `users` → `empresas` (created_by)
+- `notification_logs` → `ocorrencias`, `empresas`, `users` (relacionamentos para auditoria)
 
 ---
 
@@ -384,7 +485,9 @@ resources/
 - ✅ **Configurações flexíveis e dinâmicas**
 - ✅ **Algoritmo de detecção otimizado para documentos brasileiros**
 - ✅ **Interface responsiva para alto volume de processamento**
-- ✅ **Sistema de notificações com controles manuais/automáticos**
+- ✅ **NOVO: Sistema de notificações granular com controle total**
+- ✅ **NOVO: Logs imutáveis e organizados em interfaces dedicadas**
+- ✅ **NOVO: Controle individual por usuário e tipo de notificação**
 - ✅ **Tratamento adequado de formatos de documentos brasileiros**
 
 ### **Características de Produção**
@@ -393,7 +496,9 @@ resources/
 - ✅ **Sistema de scores para garantir qualidade das detecções**
 - ✅ **Reprocessamento manual para casos de erro**
 - ✅ **Controle total do usuário sobre o fluxo de trabalho**
-- ✅ **Notificações sob demanda ou automáticas conforme necessário**
+- ✅ **NOVO: Notificações 100% sob demanda (automáticas desabilitadas)**
+- ✅ **NOVO: Seleção granular de usuários e tipos por ocorrência**
+- ✅ **NOVO: Auditoria completa com logs imutáveis e organizados**
 
 ---
 
@@ -443,5 +548,5 @@ resources/
 
 ---
 
-*Documento atualizado em: 18/07/2025*
-*Versão: 2.0 - Sistema Completo e Pronto para Produção*
+*Documento atualizado em: 19/07/2025*
+*Versão: 2.1 - Sistema com Controle Granular de Notificações*

@@ -50,37 +50,6 @@ class UsersRelationManager extends RelationManager
                     ->trueColor('success')
                     ->falseColor('gray'),
                     
-                Tables\Columns\TextColumn::make('pivot.nivel_prioridade')
-                    ->label('Prioridade')
-                    ->badge()
-                    ->color(fn (string $state): string => match ($state) {
-                        'alta' => 'danger',
-                        'media' => 'warning',
-                        'baixa' => 'success',
-                        default => 'gray',
-                    })
-                    ->formatStateUsing(fn (string $state): string => match ($state) {
-                        'alta' => 'Alta',
-                        'media' => 'Média',
-                        'baixa' => 'Baixa',
-                        default => 'N/A',
-                    }),
-                    
-                Tables\Columns\IconColumn::make('pivot.notificacao_imediata')
-                    ->label('⚡ Imediata')
-                    ->boolean()
-                    ->toggleable(),
-                    
-                Tables\Columns\IconColumn::make('pivot.resumo_diario')
-                    ->label('📅 Resumo')
-                    ->boolean()
-                    ->toggleable(),
-                    
-                Tables\Columns\TextColumn::make('pivot.horario_resumo')
-                    ->label('Horário')
-                    ->time('H:i')
-                    ->toggleable()
-                    ->placeholder('N/A'),
             ])
             ->filters([
                 Tables\Filters\TernaryFilter::make('pivot.notificacao_email')
@@ -97,14 +66,6 @@ class UsersRelationManager extends RelationManager
                     ->falseLabel('Sem WhatsApp')
                     ->native(false),
                     
-                Tables\Filters\SelectFilter::make('pivot.nivel_prioridade')
-                    ->label('Nível de Prioridade')
-                    ->options([
-                        'alta' => 'Alta',
-                        'media' => 'Média',
-                        'baixa' => 'Baixa',
-                    ])
-                    ->multiple(),
             ])
             ->headerActions([
                 Tables\Actions\AttachAction::make()
@@ -124,40 +85,29 @@ class UsersRelationManager extends RelationManager
                                     ->label('Receber Notificações por WhatsApp')
                                     ->default(false)
                                     ->helperText('Usuário receberá mensagens WhatsApp quando ocorrências desta empresa forem encontradas'),
-                                    
-                                Forms\Components\Select::make('nivel_prioridade')
-                                    ->label('Nível de Prioridade')
-                                    ->options([
-                                        'baixa' => 'Baixa - Apenas ocorrências com score muito alto',
-                                        'media' => 'Média - Score padrão da empresa',
-                                        'alta' => 'Alta - Todas as ocorrências válidas',
-                                    ])
-                                    ->default('media')
-                                    ->required()
-                                    ->helperText('Define quais ocorrências disparam notificações para este usuário'),
                             ])->columns(2),
-                            
-                        Forms\Components\Section::make('Configurações Avançadas')
-                            ->schema([
-                                Forms\Components\Toggle::make('notificacao_imediata')
-                                    ->label('Notificação Imediata')
-                                    ->default(true)
-                                    ->helperText('Enviar notificação assim que a ocorrência for detectada'),
-                                    
-                                Forms\Components\Toggle::make('resumo_diario')
-                                    ->label('Resumo Diário')
-                                    ->default(false)
-                                    ->helperText('Receber um resumo diário das ocorrências encontradas'),
-                                    
-                                Forms\Components\TimePicker::make('horario_resumo')
-                                    ->label('Horário do Resumo Diário')
-                                    ->default('08:00:00')
-                                    ->visible(fn (Forms\Get $get) => $get('resumo_diario'))
-                                    ->helperText('Horário para envio do resumo diário'),
-                            ])->columns(3),
                     ]),
             ])
             ->actions([
+                // Ação rápida para toggle WhatsApp
+                Tables\Actions\Action::make('toggle_whatsapp')
+                    ->label(fn ($record) => $record->pivot->notificacao_whatsapp ? 'Desabilitar WhatsApp' : 'Habilitar WhatsApp')
+                    ->icon(fn ($record) => $record->pivot->notificacao_whatsapp ? 'heroicon-o-x-circle' : 'heroicon-o-check-circle')
+                    ->color(fn ($record) => $record->pivot->notificacao_whatsapp ? 'danger' : 'success')
+                    ->action(function ($record) {
+                        $empresa = $this->getOwnerRecord();
+                        $novoValor = !$record->pivot->notificacao_whatsapp;
+                        
+                        $empresa->users()->updateExistingPivot($record->id, [
+                            'notificacao_whatsapp' => $novoValor
+                        ]);
+                        
+                        \Filament\Notifications\Notification::make()
+                            ->title('WhatsApp ' . ($novoValor ? 'habilitado' : 'desabilitado'))
+                            ->success()
+                            ->send();
+                    }),
+
                 Tables\Actions\DetachAction::make()
                     ->label('Remover')
                     ->requiresConfirmation()
@@ -179,53 +129,62 @@ class UsersRelationManager extends RelationManager
                                 Forms\Components\Toggle::make('notificacao_whatsapp')
                                     ->label('Receber Notificações por WhatsApp')
                                     ->helperText('Usuário receberá mensagens WhatsApp quando ocorrências desta empresa forem encontradas'),
-                                    
-                                Forms\Components\Select::make('nivel_prioridade')
-                                    ->label('Nível de Prioridade')
-                                    ->options([
-                                        'baixa' => 'Baixa - Apenas ocorrências com score muito alto',
-                                        'media' => 'Média - Score padrão da empresa',
-                                        'alta' => 'Alta - Todas as ocorrências válidas',
-                                    ])
-                                    ->required()
-                                    ->helperText('Define quais ocorrências disparam notificações para este usuário'),
                             ])->columns(2),
-                            
-                        Forms\Components\Section::make('Configurações Avançadas')
-                            ->schema([
-                                Forms\Components\Toggle::make('notificacao_imediata')
-                                    ->label('Notificação Imediata')
-                                    ->helperText('Enviar notificação assim que a ocorrência for detectada'),
-                                    
-                                Forms\Components\Toggle::make('resumo_diario')
-                                    ->label('Resumo Diário')
-                                    ->helperText('Receber um resumo diário das ocorrências encontradas'),
-                                    
-                                Forms\Components\TimePicker::make('horario_resumo')
-                                    ->label('Horário do Resumo Diário')
-                                    ->visible(fn (Forms\Get $get) => $get('resumo_diario'))
-                                    ->helperText('Horário para envio do resumo diário'),
-                            ])->columns(3),
                     ])
                     ->mutateRecordDataUsing(function (array $data, $record): array {
+                        // Log para debug da leitura
+                        \Illuminate\Support\Facades\Log::info('Lendo dados do usuário para edição', [
+                            'user_id' => $record->id,
+                            'pivot_data' => $record->pivot->getAttributes(),
+                            'notificacao_email' => $record->pivot->notificacao_email,
+                            'notificacao_whatsapp' => $record->pivot->notificacao_whatsapp
+                        ]);
+                        
                         // Preencher com dados do pivot
                         return [
                             'notificacao_email' => (bool) ($record->pivot->notificacao_email ?? true),
                             'notificacao_whatsapp' => (bool) ($record->pivot->notificacao_whatsapp ?? false),
-                            'nivel_prioridade' => $record->pivot->nivel_prioridade ?? 'media',
-                            'notificacao_imediata' => (bool) ($record->pivot->notificacao_imediata ?? true),
-                            'resumo_diario' => (bool) ($record->pivot->resumo_diario ?? false),
-                            'horario_resumo' => $record->pivot->horario_resumo ?? '08:00:00',
                         ];
                     })
                     ->using(function (array $data, $record): bool {
-                        // Garantir que valores boolean sejam tratados corretamente
-                        $data['notificacao_email'] = (bool) ($data['notificacao_email'] ?? false);
-                        $data['notificacao_whatsapp'] = (bool) ($data['notificacao_whatsapp'] ?? false);
-                        $data['notificacao_imediata'] = (bool) ($data['notificacao_imediata'] ?? true);
-                        $data['resumo_diario'] = (bool) ($data['resumo_diario'] ?? false);
+                        // Preparar dados para atualização do pivot
+                        $updateData = [
+                            'notificacao_email' => (bool) ($data['notificacao_email'] ?? false),
+                            'notificacao_whatsapp' => (bool) ($data['notificacao_whatsapp'] ?? false),
+                        ];
                         
-                        $record->pivot->update($data);
+                        // Log para debug
+                        \Illuminate\Support\Facades\Log::info('Atualizando configurações de usuário', [
+                            'user_id' => $record->id,
+                            'empresa_id' => $this->getOwnerRecord()->id,
+                            'data_recebida' => $data,
+                            'data_para_update' => $updateData
+                        ]);
+                        
+                        // Atualizar através da empresa para garantir consistência
+                        $empresa = $this->getOwnerRecord();
+                        $empresa->users()->updateExistingPivot($record->id, $updateData);
+                        
+                        // Verificar se foi realmente salvo
+                        $verificacao = \Illuminate\Support\Facades\DB::table('user_empresa_permissions')
+                            ->where('user_id', $record->id)
+                            ->where('empresa_id', $empresa->id)
+                            ->first();
+                            
+                        \Illuminate\Support\Facades\Log::info('Verificação após salvamento', [
+                            'user_id' => $record->id,
+                            'empresa_id' => $empresa->id,
+                            'notificacao_whatsapp_salvo' => $verificacao->notificacao_whatsapp ?? 'null'
+                        ]);
+                        
+                        // Limpar cache
+                        \Illuminate\Support\Facades\Cache::flush();
+                        
+                        \Illuminate\Support\Facades\Log::info('Configurações atualizadas com sucesso', [
+                            'user_id' => $record->id,
+                            'empresa_id' => $empresa->id
+                        ]);
+                        
                         return true;
                     }),
             ])

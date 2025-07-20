@@ -21,10 +21,10 @@ class EmpresasRelationManager extends RelationManager
                 Forms\Components\Toggle::make('pode_visualizar')
                     ->label('Pode Visualizar')
                     ->default(true),
-                Forms\Components\Toggle::make('pode_receber_email')
+                Forms\Components\Toggle::make('notificacao_email')
                     ->label('Pode Receber Email')
                     ->default(true),
-                Forms\Components\Toggle::make('pode_receber_whatsapp')
+                Forms\Components\Toggle::make('notificacao_whatsapp')
                     ->label('Pode Receber WhatsApp')
                     ->default(false),
             ]);
@@ -48,10 +48,10 @@ class EmpresasRelationManager extends RelationManager
                 Tables\Columns\IconColumn::make('pivot.pode_visualizar')
                     ->label('Pode Visualizar')
                     ->boolean(),
-                Tables\Columns\IconColumn::make('pivot.pode_receber_email')
+                Tables\Columns\IconColumn::make('pivot.notificacao_email')
                     ->label('Recebe Email')
                     ->boolean(),
-                Tables\Columns\IconColumn::make('pivot.pode_receber_whatsapp')
+                Tables\Columns\IconColumn::make('pivot.notificacao_whatsapp')
                     ->label('Recebe WhatsApp')
                     ->boolean(),
             ])
@@ -65,10 +65,10 @@ class EmpresasRelationManager extends RelationManager
                         Forms\Components\Toggle::make('pode_visualizar')
                             ->label('Pode Visualizar')
                             ->default(true),
-                        Forms\Components\Toggle::make('pode_receber_email')
+                        Forms\Components\Toggle::make('notificacao_email')
                             ->label('Pode Receber Email')
-                            ->default(true),
-                        Forms\Components\Toggle::make('pode_receber_whatsapp')
+                            ->default(false),
+                        Forms\Components\Toggle::make('notificacao_whatsapp')
                             ->label('Pode Receber WhatsApp')
                             ->default(false),
                     ]),

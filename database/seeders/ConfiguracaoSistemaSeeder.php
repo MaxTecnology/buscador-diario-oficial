@@ -60,7 +60,7 @@ class ConfiguracaoSistemaSeeder extends Seeder
             ],
             [
                 'chave' => 'notificacao_automatica_apos_processamento',
-                'valor' => '1',
+                'valor' => '0',
                 'tipo' => 'boolean',
                 'descricao' => 'Enviar notificações automaticamente após encontrar ocorrências',
                 'categoria' => 'processamento',

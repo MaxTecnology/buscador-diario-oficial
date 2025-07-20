@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Ocorrencia;
 use App\Models\ConfiguracaoSistema;
+use App\Models\NotificationLog;
 use App\Services\WhatsAppService;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
@@ -36,19 +37,20 @@ class NotificacaoService
                 return $resultados;
             }
 
-            // Obter usuários da empresa para notificar com suas configurações
+            // ABORDAGEM SIMPLIFICADA: usar apenas a relação Eloquent
             $usuarios = $ocorrencia->empresa->users()
-                ->wherePivot('notificacao_email', true)
-                ->orWherePivot('notificacao_whatsapp', true)
+                ->where('telefone_whatsapp', '!=', null)
+                ->where('telefone_whatsapp', '!=', '')
                 ->get();
-                
-            Log::info('Usuários encontrados para notificação:', [
+            
+            Log::info('Usuários encontrados (abordagem simplificada):', [
                 'ocorrencia_id' => $ocorrencia->id,
                 'empresa_id' => $ocorrencia->empresa_id,
                 'usuarios_count' => $usuarios->count(),
                 'usuarios' => $usuarios->map(fn($u) => [
                     'id' => $u->id,
                     'nome' => $u->nome,
+                    'email' => $u->email,
                     'telefone_whatsapp' => $u->telefone_whatsapp,
                     'notificacao_email' => $u->pivot->notificacao_email ?? 'null',
                     'notificacao_whatsapp' => $u->pivot->notificacao_whatsapp ?? 'null',
@@ -56,30 +58,28 @@ class NotificacaoService
             ]);
 
             foreach ($usuarios as $usuario) {
-                // Verificar se o usuário deve receber notificação baseado no nível de prioridade
-                $nivelPrioridade = $usuario->pivot->nivel_prioridade ?? 'media';
-                $scoreMinimo = match($nivelPrioridade) {
-                    'baixa' => 0.9,  // 90% - apenas scores muito altos
-                    'media' => $ocorrencia->empresa->score_minimo, // Score padrão da empresa
-                    'alta' => 0.5,   // 50% - todas as ocorrências válidas
-                    default => $ocorrencia->empresa->score_minimo
-                };
-
-                // Se o score da ocorrência for menor que o mínimo do usuário, pular
-                if ($ocorrencia->score_confianca < $scoreMinimo) {
-                    continue;
-                }
-
-                // Verificar se deve enviar notificação imediata
-                $notificacaoImediata = $usuario->pivot->notificacao_imediata ?? true;
-                if (!$notificacaoImediata && !$forcarEnvio) {
-                    continue; // Usuário prefere apenas resumo diário
-                }
+                // LÓGICA SIMPLIFICADA: só verificar se tem WhatsApp habilitado no pivot
+                $podeWhatsapp = (bool) ($usuario->pivot->notificacao_whatsapp ?? false);
+                $podeEmail = (bool) ($usuario->pivot->notificacao_email ?? false);
+                
+                Log::info('Verificando usuário:', [
+                    'usuario_id' => $usuario->id,
+                    'nome' => $usuario->nome,
+                    'email' => $usuario->email,
+                    'telefone_whatsapp' => $usuario->telefone_whatsapp,
+                    'pode_email' => $podeEmail,
+                    'pode_whatsapp' => $podeWhatsapp,
+                    'whatsapp_ativo' => $whatsappAtivo,
+                    'forcar_envio' => $forcarEnvio,
+                    'ja_notificado_whatsapp' => $ocorrencia->notificado_whatsapp,
+                    'ja_notificado_email' => $ocorrencia->notificado_email
+                ]);
 
                 // Notificação por Email
                 if (($emailAtivo || $forcarEnvio) && 
-                    ($usuario->pivot->notificacao_email ?? false) && 
-                    !$ocorrencia->notificado_email) {
+                    $podeEmail && 
+                    !$ocorrencia->notificado_email &&
+                    $usuario->email) {
                     
                     $emailEnviado = $this->enviarEmail($ocorrencia, $usuario);
                     if ($emailEnviado) {
@@ -89,14 +89,27 @@ class NotificacaoService
 
                 // Notificação por WhatsApp
                 if (($whatsappAtivo || $forcarEnvio) && 
-                    ($usuario->pivot->notificacao_whatsapp ?? false) && 
+                    $podeWhatsapp && 
                     !$ocorrencia->notificado_whatsapp &&
                     $usuario->telefone_whatsapp) {
                     
+                    Log::info('Enviando WhatsApp para usuário', ['usuario_id' => $usuario->id]);
                     $whatsappEnviado = $this->enviarWhatsApp($ocorrencia, $usuario);
                     if ($whatsappEnviado) {
                         $resultados['whatsapp'] = true;
                     }
+                } else {
+                    Log::info('WhatsApp não enviado para usuário', [
+                        'usuario_id' => $usuario->id,
+                        'motivo' => 'Condições não atendidas',
+                        'detalhes' => [
+                            'whatsapp_ativo' => $whatsappAtivo,
+                            'forcar_envio' => $forcarEnvio,
+                            'pode_whatsapp' => $podeWhatsapp,
+                            'ja_notificado' => $ocorrencia->notificado_whatsapp,
+                            'tem_telefone' => !empty($usuario->telefone_whatsapp)
+                        ]
+                    ]);
                 }
             }
 
@@ -134,9 +147,34 @@ class NotificacaoService
                         ->subject($assunto);
             });
 
+            // Registrar log de sucesso
+            NotificationLog::logEmailSent([
+                'ocorrencia_id' => $ocorrencia->id,
+                'empresa_id' => $ocorrencia->empresa_id,
+                'diario_id' => $ocorrencia->diario_id,
+                'recipient' => $usuario->email,
+                'recipient_name' => $usuario->nome,
+                'message' => $mensagem,
+                'subject' => $assunto,
+                'triggered_by' => 'manual'
+            ]);
+
             return true;
         } catch (\Exception $e) {
             Log::error('Erro ao enviar email: ' . $e->getMessage());
+            
+            // Registrar log de falha
+            NotificationLog::logEmailFailed([
+                'ocorrencia_id' => $ocorrencia->id,
+                'empresa_id' => $ocorrencia->empresa_id,
+                'diario_id' => $ocorrencia->diario_id,
+                'recipient' => $usuario->email,
+                'recipient_name' => $usuario->nome,
+                'message' => $mensagem ?? 'Erro ao gerar mensagem',
+                'error_message' => $e->getMessage(),
+                'triggered_by' => 'manual'
+            ]);
+            
             return false;
         }
     }
@@ -171,7 +209,47 @@ class NotificacaoService
             
             Log::info('Resultado do envio WhatsApp:', $resultado);
             
-            return $resultado['success'] ?? false;
+            Log::info('Verificando sucesso do WhatsApp:', [
+                'success_field' => $resultado['success'] ?? 'not_set',
+                'is_success' => ($resultado['success'] ?? false) ? 'true' : 'false'
+            ]);
+
+            if ($resultado['success'] ?? false) {
+                Log::info('WhatsApp enviado com sucesso, registrando log...');
+                // Registrar log de sucesso
+                NotificationLog::logWhatsAppSent([
+                    'ocorrencia_id' => $ocorrencia->id,
+                    'empresa_id' => $ocorrencia->empresa_id,
+                    'diario_id' => $ocorrencia->diario_id,
+                    'recipient' => $usuario->telefone_whatsapp,
+                    'recipient_name' => $usuario->nome,
+                    'message' => $mensagem,
+                    'external_id' => $resultado['response']['id'] ?? null,
+                    'triggered_by' => 'manual',
+                    'headers' => [
+                        'api_response' => $resultado['response'] ?? [],
+                        'message_type' => 'text'
+                    ]
+                ]);
+                
+                Log::info('Log de sucesso registrado!');
+                return true;
+            } else {
+                Log::warning('WhatsApp falhou, registrando log de falha...');
+                // Registrar log de falha
+                NotificationLog::logWhatsAppFailed([
+                    'ocorrencia_id' => $ocorrencia->id,
+                    'empresa_id' => $ocorrencia->empresa_id,
+                    'diario_id' => $ocorrencia->diario_id,
+                    'recipient' => $usuario->telefone_whatsapp,
+                    'recipient_name' => $usuario->nome,
+                    'message' => $mensagem,
+                    'error_message' => $resultado['error'] ?? 'Erro desconhecido',
+                    'triggered_by' => 'manual'
+                ]);
+                
+                return false;
+            }
         } catch (\Exception $e) {
             Log::error('Erro ao enviar WhatsApp: ' . $e->getMessage(), [
                 'usuario_id' => $usuario->id,
@@ -215,5 +293,41 @@ class NotificacaoService
         }
 
         return $resultados;
+    }
+
+    public function enviarEmailParaUsuario(Ocorrencia $ocorrencia, $usuario): bool
+    {
+        try {
+            if (!$usuario->email) {
+                Log::warning('Usuário sem email:', ['usuario_id' => $usuario->id]);
+                return false;
+            }
+
+            return $this->enviarEmail($ocorrencia, $usuario);
+        } catch (\Exception $e) {
+            Log::error('Erro ao enviar email para usuário específico: ' . $e->getMessage(), [
+                'usuario_id' => $usuario->id,
+                'ocorrencia_id' => $ocorrencia->id
+            ]);
+            return false;
+        }
+    }
+
+    public function enviarWhatsAppParaUsuario(Ocorrencia $ocorrencia, $usuario): bool
+    {
+        try {
+            if (!$usuario->telefone_whatsapp) {
+                Log::warning('Usuário sem telefone WhatsApp:', ['usuario_id' => $usuario->id]);
+                return false;
+            }
+
+            return $this->enviarWhatsApp($ocorrencia, $usuario);
+        } catch (\Exception $e) {
+            Log::error('Erro ao enviar WhatsApp para usuário específico: ' . $e->getMessage(), [
+                'usuario_id' => $usuario->id,
+                'ocorrencia_id' => $ocorrencia->id
+            ]);
+            return false;
+        }
     }
 }

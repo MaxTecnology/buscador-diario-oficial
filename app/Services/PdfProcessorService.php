@@ -8,22 +8,37 @@ use App\Models\Ocorrencia;
 use Illuminate\Support\Facades\Storage;
 use Smalot\PdfParser\Parser;
 use Illuminate\Support\Facades\Log;
+use App\Services\LoggingService;
 
 class PdfProcessorService
 {
     protected $parser;
+    protected $loggingService;
 
     public function __construct()
     {
         $this->parser = new Parser();
+        $this->loggingService = new LoggingService();
     }
 
     public function processarPdf(Diario $diario): array
     {
+        $startTime = microtime(true);
+        
         try {
             // Aumentar limite de tempo e memória para PDFs grandes
             set_time_limit(300); // 5 minutos
             ini_set('memory_limit', '512M');
+            
+            $this->loggingService->logProcessamentoPdf(
+                LoggingService::NIVEL_INFO,
+                "Iniciando processamento de PDF",
+                [
+                    'diario_id' => $diario->id,
+                    'nome_arquivo' => $diario->nome_arquivo,
+                    'tamanho_arquivo' => $diario->tamanho_arquivo,
+                ]
+            );
             
             // Arquivo está no disco público
             $caminhoArquivo = Storage::disk('public')->path($diario->caminho_arquivo);
@@ -34,7 +49,16 @@ class PdfProcessorService
 
             // Verificar tamanho do arquivo
             $tamanhoMB = filesize($caminhoArquivo) / 1024 / 1024;
-            Log::info("Processando PDF: {$diario->nome_arquivo}, Tamanho: " . round($tamanhoMB, 2) . "MB");
+            
+            $this->loggingService->logProcessamentoPdf(
+                LoggingService::NIVEL_INFO,
+                "PDF carregado para processamento",
+                [
+                    'diario_id' => $diario->id,
+                    'tamanho_mb' => round($tamanhoMB, 2),
+                    'caminho' => $caminhoArquivo
+                ]
+            );
 
             $pdf = $this->parser->parseFile($caminhoArquivo);
             $textoCompleto = $pdf->getText();

@@ -8,15 +8,31 @@ use App\Models\User;
 use App\Models\SystemConfig;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use App\Services\LoggingService;
+use App\Models\NotificationLog;
+use App\Mail\OcorrenciaEncontradaMail;
 
 class NotificationService
 {
+    protected $loggingService;
+
+    public function __construct()
+    {
+        $this->loggingService = new LoggingService();
+    }
+
     public function notifyOcorrencia(Ocorrencia $ocorrencia): void
     {
-        Log::info('Iniciando notificações para ocorrência', [
-            'ocorrencia_id' => $ocorrencia->id,
-            'empresa' => $ocorrencia->empresa->nome
-        ]);
+        $this->loggingService->logNotificacao(
+            LoggingService::NIVEL_INFO,
+            'Iniciando notificações para ocorrência',
+            [
+                'tipo' => 'ocorrencia',
+                'ocorrencia_id' => $ocorrencia->id,
+                'empresa' => $ocorrencia->empresa->nome,
+                'diario' => $ocorrencia->diario->nome_arquivo
+            ]
+        );
 
         // Obter usuários que podem receber notificações desta empresa
         $users = $this->getUsersForNotification($ocorrencia);
@@ -71,12 +87,76 @@ class NotificationService
 
     protected function sendEmailNotification(User $user, Ocorrencia $ocorrencia): void
     {
-        // TODO: Implementar envio de email
-        Log::info('Email notification seria enviado', [
+        if (empty($user->email)) {
+            Log::warning('Usuário sem email', [
+                'user_id' => $user->id,
+                'ocorrencia_id' => $ocorrencia->id
+            ]);
+            return;
+        }
+
+        Log::info('Enviando email', [
             'user_id' => $user->id,
             'email' => $user->email,
             'ocorrencia_id' => $ocorrencia->id
         ]);
+
+        try {
+            // Enviar email real
+            Mail::to($user->email)->send(new OcorrenciaEncontradaMail(
+                $ocorrencia->empresa,
+                $ocorrencia->diario,
+                $ocorrencia
+            ));
+
+            // Registrar log de sucesso
+            NotificationLog::logEmailSent([
+                'ocorrencia_id' => $ocorrencia->id,
+                'user_id' => $user->id,
+                'empresa_id' => $ocorrencia->empresa_id,
+                'diario_id' => $ocorrencia->diario_id,
+                'recipient' => $user->email,
+                'recipient_name' => $user->name,
+                'subject' => "🚨 {$ocorrencia->empresa->nome} encontrada em Diário Oficial - {$ocorrencia->diario->estado}",
+                'message' => "Email de notificação automática enviado para {$user->name}",
+                'triggered_by' => 'automatic',
+                'headers' => [
+                    'Content-Type' => 'text/html; charset=UTF-8',
+                    'X-Notification-Type' => 'ocorrencia_encontrada',
+                ]
+            ]);
+
+            // Marcar ocorrência como notificada por email
+            $ocorrencia->update(['notificado_email' => true]);
+
+            Log::info('Email enviado com sucesso', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'ocorrencia_id' => $ocorrencia->id
+            ]);
+
+        } catch (\Exception $e) {
+            // Registrar log de falha
+            NotificationLog::logEmailFailed([
+                'ocorrencia_id' => $ocorrencia->id,
+                'user_id' => $user->id,
+                'empresa_id' => $ocorrencia->empresa_id,
+                'diario_id' => $ocorrencia->diario_id,
+                'recipient' => $user->email,
+                'recipient_name' => $user->name,
+                'subject' => "🚨 {$ocorrencia->empresa->nome} encontrada em Diário Oficial - {$ocorrencia->diario->estado}",
+                'message' => "Tentativa de email para {$user->name}",
+                'error_message' => $e->getMessage(),
+                'triggered_by' => 'automatic',
+            ]);
+
+            Log::error('Erro ao enviar email', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'ocorrencia_id' => $ocorrencia->id,
+                'error' => $e->getMessage()
+            ]);
+        }
     }
 
     public function testWhatsAppForUser(User $user): array

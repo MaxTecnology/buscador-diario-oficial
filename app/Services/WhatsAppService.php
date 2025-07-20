@@ -109,7 +109,7 @@ class WhatsAppService
 
     protected function buildNotificationMessage(string $empresaNome, string $diarioNome, string $termo, string $contexto): string
     {
-        $appName = SystemConfig::getValue('system.app_name', 'Sistema de Diários Oficiais');
+        $appName = ConfiguracaoSistema::get('system.app_name', 'Sistema de Diários Oficiais');
         
         return "🚨 *{$appName}* - Nova Ocorrência\n\n" .
                "🏢 *Empresa:* {$empresaNome}\n" .
@@ -135,8 +135,8 @@ class WhatsAppService
 
     public function isBusinessHours(): bool
     {
-        $startTime = SystemConfig::getValue('notifications.whatsapp_timeout_start', '08:00');
-        $endTime = SystemConfig::getValue('notifications.whatsapp_timeout_end', '22:00');
+        $startTime = ConfiguracaoSistema::get('notifications.whatsapp_timeout_start', '08:00');
+        $endTime = ConfiguracaoSistema::get('notifications.whatsapp_timeout_end', '22:00');
         
         $now = now()->format('H:i');
         

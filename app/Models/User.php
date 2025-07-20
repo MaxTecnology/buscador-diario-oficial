@@ -74,15 +74,9 @@ class User extends Authenticatable
     {
         return $this->belongsToMany(Empresa::class, 'user_empresa_permissions')
             ->withPivot([
-                'pode_visualizar', 
-                'pode_receber_email', 
-                'pode_receber_whatsapp',
+                'pode_visualizar',
                 'notificacao_email',
-                'notificacao_whatsapp',
-                'nivel_prioridade',
-                'notificacao_imediata',
-                'resumo_diario',
-                'horario_resumo'
+                'notificacao_whatsapp'
             ])
             ->withTimestamps();
     }

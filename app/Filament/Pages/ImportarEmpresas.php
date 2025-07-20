@@ -56,9 +56,11 @@ class ImportarEmpresas extends Page implements HasForms
                         Textarea::make('conteudo_csv')
                             ->label('Conteúdo CSV')
                             ->rows(10)
-                            ->placeholder('27390230000160;ATACADAO COMPRE BEM LTDA;ATACADAO COMPRE BEM;247294047;;
-407959000227;ALMIR R DA SILVA LTDA;ALMIR R DA SILVA LTDA;244047782;;
-407959000146;ALMIR R DA SILVA LTDA;ALMIR R DA SILVA LTDA;240945700;;')
+                            ->placeholder('
+                            12345678000199;SUPERMERCADO EXEMPLO LTDA;SUPERMERCADO EXEMPLO;100200300;;
+98765432000987;LOJA DE TESTE LTDA;LOJA DE TESTE;200300400;;
+45678912000456;MERCADO GENÉRICO SA;MERCADO GENÉRICO;300400500;;
+                            ')
                             ->helperText('Uma linha por empresa, formato: CNPJ;RAZAO_SOCIAL;NOME_FANTASIA;INSCRICAO_ESTADUAL;OBSERVACOES')
                             ->columnSpanFull(),
                     ]),
