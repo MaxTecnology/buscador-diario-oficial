@@ -324,6 +324,29 @@ manager@diario.com / manager123 (Gerente)
 operator@diario.com / operator123 (Operador)
 ```
 
+### **Seeds e Dados Iniciais**
+- `php artisan db:seed` (padrão): cria **roles**, **configs** e o **usuário admin**.
+- Seeds fictícias de empresas/diários/ocorrências foram removidas para manter apenas dados reais.
+
+### **Importação de Empresas via CSV**
+- Template: `docs/clientes.csv` (delimitador `;`, sem header).
+- Colunas (posição): `cnpj_ou_cpf;razao_social;nome_fantasia;inscricao_estadual;observacoes`.
+- CNPJ/CPF: apenas números; aceita 11 (CPF) ou 14 (CNPJ) dígitos.
+- IE: use `0` ou vazio para ausente.
+- Nome fantasia vira termo de busca adicional (e variação sem LTDA/ME/EIRELI).
+- Regras: `ativo=true`, `prioridade=media`, `score_minimo=0.85`, dedupe por CNPJ/CPF (duplicados são atualizados, não criados).
+
+### **Fluxo de Processamento de Diários (Manual)**
+- Upload do PDF cria o diário em **status pendente** (não processa automaticamente).
+- Na lista de diários há um botão **Processar** (e ação em lote) para iniciar a detecção.
+- O processamento pode ir para **fila** (config `processamento_assincrono`, padrão: ativado) ou rodar síncrono se configurado.
+- Status: pendente → processando → concluído/erro. Logs/erros ficam no registro.
+- Reprocessamento: use o mesmo botão Processar em registros pendentes/erro.
+- Ocorrências gravam a **página** onde o termo foi encontrado; na lista de ocorrências há um link para abrir o PDF direto na página.
+- Lista de diários com abas rápidas: Todos, Pendentes, Processando, Concluídos, Erro (com contadores).
+- Lista de ocorrências com filtros rápidos (período, estado, tipo, score, diário) e cards-resumo (total, hoje, semana). A lista é enxuta; os detalhes ficam em um modal com contexto destacado e PDF embutido na página encontrada.
+- Storage de diários/PDFs: configurado para usar disk S3/MinIO (`DIARIOS_DISK`, bucket `diarios`, endpoint MinIO). O embed usa URL do disk; se o bucket for privado, use presign ou defina política pública de leitura.
+
 ---
 
 ## 🧪 **Testes e Validação**

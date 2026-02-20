@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\Log;
 
 class EmpresaSearchService
 {
+    private const LIMIAR_SUSPEITO = 0.20;
+
     private array $scoreConfig;
 
     public function __construct()
@@ -51,10 +53,10 @@ class EmpresaSearchService
             $matches = $this->buscarEmpresaNoTexto($empresa, $textoNormalizado, $diario->texto_extraido);
             
             foreach ($matches as $match) {
-                // Verificar se atende o score mínimo
-                if ($match['score'] >= $empresa->score_minimo) {
-                    $ocorrenciasEncontradas[] = $this->criarOcorrencia($diario, $empresa, $match);
+                if ($match['score'] < self::LIMIAR_SUSPEITO) {
+                    continue;
                 }
+                $ocorrenciasEncontradas[] = $this->criarOcorrencia($diario, $empresa, $match);
             }
         }
 
@@ -333,6 +335,10 @@ class EmpresaSearchService
     {
         $contexto = $match['contexto'];
         
+        $score = $match['score'];
+        $scoreMinimo = $empresa->score_minimo ?? 0.85;
+        $confiabilidade = $score >= $scoreMinimo ? 'alta' : 'suspeito';
+
         return Ocorrencia::create([
             'diario_id' => $diario->id,
             'empresa_id' => $empresa->id,
@@ -341,7 +347,9 @@ class EmpresaSearchService
             'contexto_completo' => $contexto['contexto_completo'],
             'posicao_inicio' => $contexto['posicao_inicio'],
             'posicao_fim' => $contexto['posicao_fim'],
-            'score_confianca' => $match['score'],
+            'score_confianca' => $score,
+            'confiabilidade' => $confiabilidade,
+            'status_revisao' => 'pendente',
             'pagina' => $this->estimarPagina($diario->texto_extraido, $match['posicao']),
         ]);
     }

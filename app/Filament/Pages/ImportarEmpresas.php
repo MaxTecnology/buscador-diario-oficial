@@ -57,9 +57,9 @@ class ImportarEmpresas extends Page implements HasForms
                             ->label('Conteúdo CSV')
                             ->rows(10)
                             ->placeholder('
-                            12345678000199;SUPERMERCADO EXEMPLO LTDA;SUPERMERCADO EXEMPLO;100200300;;
-98765432000987;LOJA DE TESTE LTDA;LOJA DE TESTE;200300400;;
-45678912000456;MERCADO GENÉRICO SA;MERCADO GENÉRICO;300400500;;
+                            00000000000123;EMPRESA FICTICIA UM;EMPRESA FICTICIA UM;0;;
+12345678000199;SUPERMERCADO EXEMPLO LTDA;SUPERMERCADO EXEMPLO;100200300;;
+98765432000111;LOJA DEMO LTDA;LOJA DEMO;200300400;;
                             ')
                             ->helperText('Uma linha por empresa, formato: CNPJ;RAZAO_SOCIAL;NOME_FANTASIA;INSCRICAO_ESTADUAL;OBSERVACOES')
                             ->columnSpanFull(),
@@ -94,108 +94,111 @@ class ImportarEmpresas extends Page implements HasForms
         }
         
         $resultado = $this->processarCsv($conteudoCsv);
-        
-        if ($resultado['sucesso']) {
-            Notification::make()
-                ->title('Importação Concluída!')
-                ->body("Importadas: {$resultado['importadas']} empresas. Puladas: {$resultado['puladas']} (já existem).")
-                ->success()
-                ->send();
-                
-            // Limpar formulário
-            $this->form->fill();
-        } else {
-            Notification::make()
-                ->title('Erro na Importação')
-                ->body($resultado['erro'])
-                ->danger()
-                ->send();
+        $hasErros = !empty($resultado['erros']);
+        $mensagemBase = "Importadas: {$resultado['importadas']} | Atualizadas: {$resultado['atualizadas']}";
+        if ($hasErros) {
+            $mensagemBase .= " | Erros: " . implode('; ', array_slice($resultado['erros'], 0, 5));
         }
+
+        Notification::make()
+            ->title($hasErros ? 'Importação concluída com avisos' : 'Importação concluída')
+            ->body($mensagemBase)
+            ->color($hasErros ? 'warning' : 'success')
+            ->send();
+
+        // Limpar formulário
+        $this->form->fill();
     }
 
     protected function processarCsv(string $conteudoCsv): array
     {
-        $linhas = array_filter(explode("\n", $conteudoCsv));
+        $linhas = preg_split("/\r\n|\n|\r/", trim($conteudoCsv));
         $importadas = 0;
-        $puladas = 0;
+        $atualizadas = 0;
         $erros = [];
         
         foreach ($linhas as $numeroLinha => $linha) {
             $linha = trim($linha);
-            if (empty($linha)) continue;
+            if ($linha === '') {
+                continue;
+            }
             
             $dados = array_map('trim', explode(';', $linha));
             
-            // Validar se tem pelo menos CNPJ e Razão Social
+            // Validar se tem pelo menos CNPJ/CPF e Razão Social
             if (count($dados) < 2 || empty($dados[0]) || empty($dados[1])) {
-                $erros[] = "Linha " . ($numeroLinha + 1) . ": CNPJ e Razão Social são obrigatórios";
+                $erros[] = "Linha " . ($numeroLinha + 1) . ": CNPJ/CPF e Razão Social são obrigatórios";
                 continue;
             }
             
-            $cnpj = preg_replace('/[^0-9]/', '', $dados[0]);
+            $documentoRaw = preg_replace('/[^0-9]/', '', $dados[0]);
             $razaoSocial = $dados[1];
             $nomeFantasia = $dados[2] ?? $razaoSocial;
             $inscricaoEstadual = $dados[3] ?? '';
-            $observacoes = $dados[4] ?? '';
-            
-            // Validar CNPJ
-            if (strlen($cnpj) !== 14) {
-                $erros[] = "Linha " . ($numeroLinha + 1) . ": CNPJ deve ter 14 dígitos";
-                continue;
+            $inscricaoEstadual = preg_replace('/[^0-9A-Za-z]/', '', $inscricaoEstadual);
+            if ($inscricaoEstadual === '' || $inscricaoEstadual === '0') {
+                $inscricaoEstadual = null;
             }
+            // Observações (coluna 5) é ignorada por enquanto
             
-            // Verificar se já existe
-            if (Empresa::where('cnpj', $cnpj)->exists()) {
-                $puladas++;
+            // Normalizar documento: CPF (11) ou CNPJ (12-14 -> pad left)
+            $documento = null;
+            $lenDoc = strlen($documentoRaw);
+            if ($lenDoc === 11) {
+                $documento = $documentoRaw;
+            } elseif ($lenDoc >= 12 && $lenDoc <= 14) {
+                $documento = str_pad($documentoRaw, 14, '0', STR_PAD_LEFT);
+            } else {
+                $erros[] = "Linha " . ($numeroLinha + 1) . ": CNPJ/CPF deve ter 11 ou até 14 dígitos (será completado com zeros se menor que 14)";
                 continue;
             }
             
             try {
-                // Preparar termos personalizados
-                $termosPersonalizados = [];
+                $empresa = Empresa::firstOrNew(['cnpj' => $documento]);
+                $jaExiste = $empresa->exists;
                 
-                // Adicionar nome fantasia se for diferente da razão social
-                if (!empty($nomeFantasia) && $nomeFantasia !== $razaoSocial) {
-                    $termosPersonalizados[] = $nomeFantasia;
+                $termosPersonalizados = $empresa->termos_personalizados ?? [];
+                if (!is_array($termosPersonalizados)) {
+                    $termosPersonalizados = [];
                 }
                 
-                // Adicionar variações do nome fantasia (abreviações, etc.)
                 if (!empty($nomeFantasia) && $nomeFantasia !== $razaoSocial) {
-                    // Adicionar versão sem LTDA, ME, etc.
+                    $termosPersonalizados[] = $nomeFantasia;
                     $nomeFantasiaSemSufixo = preg_replace('/\s+(LTDA|ME|EIRELI|EPP|S\.A\.|SA)\.?\s*$/i', '', $nomeFantasia);
-                    if ($nomeFantasiaSemSufixo !== $nomeFantasia && !in_array($nomeFantasiaSemSufixo, $termosPersonalizados)) {
+                    if (!empty($nomeFantasiaSemSufixo) && $nomeFantasiaSemSufixo !== $nomeFantasia) {
                         $termosPersonalizados[] = $nomeFantasiaSemSufixo;
                     }
                 }
 
-                Empresa::create([
+                $empresa->fill([
                     'nome' => $razaoSocial,
-                    'cnpj' => $cnpj,
                     'inscricao_estadual' => $inscricaoEstadual,
-                    'termos_personalizados' => $termosPersonalizados,
-                    'prioridade' => 'media',
-                    'score_minimo' => 0.85,
-                    'ativo' => true,
-                    'created_by' => auth()->id(),
+                    'termos_personalizados' => array_values(array_unique(array_filter($termosPersonalizados))),
+                    'prioridade' => $empresa->prioridade ?? 'media',
+                    'score_minimo' => $empresa->score_minimo ?? 0.85,
+                    'ativo' => $empresa->ativo ?? true,
                 ]);
+
+                if (!$jaExiste && auth()->id()) {
+                    $empresa->created_by = auth()->id();
+                }
                 
-                $importadas++;
-            } catch (\Exception $e) {
+                $empresa->save();
+                
+                if ($jaExiste) {
+                    $atualizadas++;
+                } else {
+                    $importadas++;
+                }
+            } catch (\Throwable $e) {
                 $erros[] = "Linha " . ($numeroLinha + 1) . ": Erro ao salvar - " . $e->getMessage();
             }
         }
         
-        if (!empty($erros)) {
-            return [
-                'sucesso' => false,
-                'erro' => 'Erros encontrados: ' . implode('; ', array_slice($erros, 0, 5))
-            ];
-        }
-        
         return [
-            'sucesso' => true,
             'importadas' => $importadas,
-            'puladas' => $puladas
+            'atualizadas' => $atualizadas,
+            'erros' => $erros,
         ];
     }
 

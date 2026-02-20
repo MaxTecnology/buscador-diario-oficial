@@ -18,7 +18,7 @@ class AdminUserSeeder extends Seeder
             ['email' => 'admin@diario.com'],
             [
                 'name' => 'Administrador do Sistema',
-                'email' => 'admin@diario.com',
+                'email' => 'admin@admin.com',
                 'password' => Hash::make('admin123'),
                 'telefone' => '(11) 99999-9999',
                 'telefone_whatsapp' => '11999999999',

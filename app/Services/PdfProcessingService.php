@@ -26,7 +26,7 @@ class PdfProcessingService
 
         // Salvar arquivo no storage
         $filename = $this->generateFileName($file, $estado, $datadiario);
-        $caminho = $file->storeAs('diarios/' . $estado, $filename, 'local');
+        $caminho = $file->storeAs('diarios/' . $estado, $filename, config('filesystems.diarios_disk', 'diarios'));
 
         // Criar registro do diário
         $diario = Diario::create([
@@ -58,11 +58,7 @@ class PdfProcessingService
         try {
             $diario->marcarComoProcessando();
 
-            $caminhoCompleto = Storage::path($diario->caminho_arquivo);
-            
-            if (!file_exists($caminhoCompleto)) {
-                throw new \Exception("Arquivo PDF não encontrado: {$caminhoCompleto}");
-            }
+            [$caminhoCompleto, $tmp] = $this->obterCaminhoLocal($diario);
 
             // Usar Spatie PDF-to-Text para extração
             $textoCompleto = Pdf::getText($caminhoCompleto);
@@ -104,6 +100,10 @@ class PdfProcessingService
             ]);
 
             return false;
+        } finally {
+            if (isset($tmp) && $tmp && file_exists($tmp)) {
+                @unlink($tmp);
+            }
         }
     }
 
@@ -215,5 +215,30 @@ class PdfProcessingService
         
         $sucessos = Diario::concluidos()->count();
         return round(($sucessos / $total) * 100, 2);
+    }
+
+    protected function obterCaminhoLocal(Diario $diario): array
+    {
+        $disk = Storage::disk(config('filesystems.diarios_disk', 'diarios'));
+        $adapter = $disk->getAdapter();
+
+        if (method_exists($adapter, 'getPathPrefix')) {
+            $path = $adapter->getPathPrefix() . $diario->caminho_arquivo;
+            if (!file_exists($path)) {
+                throw new \Exception("Arquivo PDF não encontrado: {$path}");
+            }
+            return [$path, null];
+        }
+
+        $tmpFile = tempnam(sys_get_temp_dir(), 'pdf_');
+        $stream = $disk->readStream($diario->caminho_arquivo);
+        if (!$stream) {
+            throw new \Exception("Não foi possível ler o PDF do storage: {$diario->caminho_arquivo}");
+        }
+        $out = fopen($tmpFile, 'w+b');
+        stream_copy_to_stream($stream, $out);
+        fclose($stream);
+        fclose($out);
+        return [$tmpFile, $tmpFile];
     }
 }

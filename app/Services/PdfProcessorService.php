@@ -12,6 +12,8 @@ use App\Services\LoggingService;
 
 class PdfProcessorService
 {
+    private const LIMIAR_SUSPEITO = 0.20; // score mínimo para registrar como suspeito
+
     protected $parser;
     protected $loggingService;
 
@@ -40,12 +42,8 @@ class PdfProcessorService
                 ]
             );
             
-            // Arquivo está no disco público
-            $caminhoArquivo = Storage::disk('public')->path($diario->caminho_arquivo);
-            
-            if (!file_exists($caminhoArquivo)) {
-                throw new \Exception("Arquivo PDF não encontrado: {$caminhoArquivo}");
-            }
+            // Arquivo no storage configurado
+            [$caminhoArquivo, $tmpFile] = $this->obterCaminhoLocalPdf($diario);
 
             // Verificar tamanho do arquivo
             $tamanhoMB = filesize($caminhoArquivo) / 1024 / 1024;
@@ -83,11 +81,17 @@ class PdfProcessorService
             // Normalizar espaços em branco
             $textoCompleto = preg_replace('/\s+/', ' ', $textoCompleto);
             $textoCompleto = trim($textoCompleto);
+
+            // Normalizar texto por página para mapear posições -> página
+            $dadosPaginas = $this->normalizarTextoPorPagina($pdf);
+            $textoNormalizado = $dadosPaginas['texto_normalizado'];
+            $mapaPaginas = $dadosPaginas['mapa_paginas'];
             
             // Salvar texto completo em arquivo separado para melhor performance
+            $disk = $this->getDiariosDisk();
             $nomeArquivoTexto = 'texto_' . $diario->id . '_' . time() . '.txt';
             $caminhoTextoCompleto = 'diarios/textos/' . $nomeArquivoTexto;
-            Storage::disk('public')->put($caminhoTextoCompleto, $textoCompleto);
+            $disk->put($caminhoTextoCompleto, $textoCompleto);
             
             // Para o banco, salvar apenas um preview
             $textoPreview = mb_substr($textoCompleto, 0, 2000);
@@ -118,13 +122,15 @@ class PdfProcessorService
             $diario->update($updateData);
 
             // Usar o texto completo para buscar ocorrências (não o preview)
-            $ocorrenciasEncontradas = $this->buscarOcorrencias($diario, $textoCompleto);
+            $ocorrenciasEncontradas = $this->buscarOcorrencias($diario, $textoCompleto, $textoNormalizado, $mapaPaginas);
 
             // Enviar notificações automáticas se configurado
             if (\App\Models\ConfiguracaoSistema::get('notificacao_automatica_apos_processamento', true)) {
                 $notificacaoService = app(\App\Services\NotificacaoService::class);
                 foreach ($ocorrenciasEncontradas as $ocorrencia) {
-                    $notificacaoService->notificarOcorrencia($ocorrencia);
+                    if ($ocorrencia->confiabilidade === 'alta') {
+                        $notificacaoService->notificarOcorrencia($ocorrencia);
+                    }
                 }
             }
 
@@ -158,10 +164,14 @@ class PdfProcessorService
                 'sucesso' => false,
                 'erro' => $e->getMessage()
             ];
+        } finally {
+            if (isset($tmpFile) && $tmpFile && file_exists($tmpFile)) {
+                @unlink($tmpFile);
+            }
         }
     }
 
-    protected function buscarOcorrencias(Diario $diario, string $texto): array
+    protected function buscarOcorrencias(Diario $diario, string $textoOriginal, string $textoNormalizado, array $mapaPaginas): array
     {
         $ocorrenciasEncontradas = [];
         
@@ -171,23 +181,23 @@ class PdfProcessorService
         Log::info("Iniciando busca de ocorrências", [
             'diario_id' => $diario->id,
             'empresas_ativas' => $empresas->count(),
-            'tamanho_texto' => strlen($texto)
+            'tamanho_texto' => strlen($textoOriginal)
         ]);
-        
-        // Normalizar texto como no seu Python (mais agressivo)
-        $textoNormalizado = $this->normalizarTexto($texto);
 
         foreach ($empresas as $empresa) {
-            $melhorMatch = $this->buscarMelhorMatchEmpresa($empresa, $textoNormalizado, $texto);
+            $melhorMatch = $this->buscarMelhorMatchEmpresa($empresa, $textoNormalizado, $textoOriginal, $mapaPaginas);
             
-            if ($melhorMatch && $melhorMatch['score'] >= $empresa->score_minimo) {
+            if ($melhorMatch && $melhorMatch['score'] >= self::LIMIAR_SUSPEITO) {
                 
                 Log::info("Empresa {$empresa->nome}: Detectada com {$melhorMatch['tipo']} - Score: {$melhorMatch['score']}");
                 
                 // Limpar dados antes de salvar
                 $termoLimpo = mb_substr($melhorMatch['termo'], 0, 255);
                 $contextoLimpo = mb_substr($melhorMatch['contexto'], 0, 1000);
-                
+                $score = $melhorMatch['score'];
+                $scoreMinimo = $empresa->score_minimo ?? 0.85;
+                $confiabilidade = $score >= $scoreMinimo ? 'alta' : 'suspeito';
+                $statusRevisao = 'pendente';
 
                 $ocorrencia = Ocorrencia::create([
                     'diario_id' => $diario->id,
@@ -195,9 +205,12 @@ class PdfProcessorService
                     'cnpj' => $empresa->cnpj,
                     'termo_encontrado' => $termoLimpo,
                     'contexto_completo' => $contextoLimpo,
-                    'score_confianca' => $melhorMatch['score'],
+                    'score_confianca' => $score,
+                    'confiabilidade' => $confiabilidade,
+                    'status_revisao' => $statusRevisao,
                     'posicao_inicio' => $melhorMatch['posicao'],
                     'posicao_fim' => $melhorMatch['posicao'] + strlen($melhorMatch['termo']),
+                    'pagina' => $melhorMatch['pagina'] ?? null,
                     'tipo_match' => $melhorMatch['tipo'],
                 ]);
 
@@ -208,6 +221,12 @@ class PdfProcessorService
                     'empresa_nome' => $empresa->nome,
                     'score' => $melhorMatch['score'],
                     'tipo' => $melhorMatch['tipo']
+                ]);
+            } else {
+                Log::info("Match descartado por score abaixo do limiar suspeito", [
+                    'empresa' => $empresa->nome,
+                    'score' => $melhorMatch['score'] ?? null,
+                    'limiar' => self::LIMIAR_SUSPEITO,
                 ]);
             }
         }
@@ -320,9 +339,59 @@ class PdfProcessorService
     }
 
     /**
+     * Normaliza texto por página para construir um mapa de posições -> página.
+     */
+    protected function normalizarTextoPorPagina($pdf): array
+    {
+        $textoNormalizado = '';
+        $mapaPaginas = [];
+
+        try {
+            if (method_exists($pdf, 'getPages')) {
+                $pages = $pdf->getPages();
+                foreach ($pages as $index => $page) {
+                    $textoPagina = $page->getText();
+                    $textoPagina = $this->sanearTextoBasico($textoPagina);
+                    $textoPaginaNormalizado = $this->normalizarTexto($textoPagina);
+
+                    $textoPaginaNormalizado = trim($textoPaginaNormalizado);
+                    $inicio = strlen($textoNormalizado);
+                    if ($textoNormalizado !== '' && $textoPaginaNormalizado !== '') {
+                        $textoNormalizado .= ' ';
+                        $inicio = strlen($textoNormalizado);
+                    }
+                    $textoNormalizado .= $textoPaginaNormalizado;
+                    $mapaPaginas[] = [
+                        'pagina' => $index + 1,
+                        'start' => $inicio,
+                        'end' => strlen($textoNormalizado),
+                    ];
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Falha ao normalizar texto por página: ' . $e->getMessage());
+        }
+
+        if (empty($textoNormalizado)) {
+            // Fallback: tudo em uma página
+            $textoNormalizado = $this->normalizarTexto($pdf->getText() ?? '');
+            $mapaPaginas[] = [
+                'pagina' => 1,
+                'start' => 0,
+                'end' => strlen($textoNormalizado),
+            ];
+        }
+
+        return [
+            'texto_normalizado' => $textoNormalizado,
+            'mapa_paginas' => $mapaPaginas,
+        ];
+    }
+
+    /**
      * Buscar melhor match para empresa (baseado na sua lógica de prioridade)
      */
-    protected function buscarMelhorMatchEmpresa(Empresa $empresa, string $textoNormalizado, string $textoOriginal): ?array
+    protected function buscarMelhorMatchEmpresa(Empresa $empresa, string $textoNormalizado, string $textoOriginal, array $mapaPaginas): ?array
     {
         $melhorMatch = null;
         $melhorScore = 0;
@@ -341,7 +410,8 @@ class PdfProcessorService
                         'tipo' => 'cnpj',
                         'score' => 0.95, // Score alto para CNPJ
                         'posicao' => $posicao,
-                        'contexto' => $contexto
+                        'contexto' => $contexto,
+                        'pagina' => $this->determinarPagina($posicao, $mapaPaginas),
                     ];
                     $melhorScore = 0.95;
                 }
@@ -357,7 +427,8 @@ class PdfProcessorService
                             'tipo' => 'cnpj',
                             'score' => 0.90, // Score um pouco menor para CNPJ sem zeros
                             'posicao' => $posicao,
-                            'contexto' => $contexto
+                            'contexto' => $contexto,
+                            'pagina' => $this->determinarPagina($posicao, $mapaPaginas),
                         ];
                         $melhorScore = 0.90;
                     }
@@ -377,16 +448,17 @@ class PdfProcessorService
                 
                 $scoreInscricao = 0.85;
                 if ($scoreInscricao > $melhorScore) {
-                    $melhorMatch = [
-                        'termo' => $inscricaoLimpa,
-                        'tipo' => 'inscricao_estadual',
-                        'score' => $scoreInscricao,
-                        'posicao' => $posicao,
-                        'contexto' => $contexto
-                    ];
-                    $melhorScore = $scoreInscricao;
+                        $melhorMatch = [
+                            'termo' => $inscricaoLimpa,
+                            'tipo' => 'inscricao_estadual',
+                            'score' => $scoreInscricao,
+                            'posicao' => $posicao,
+                            'contexto' => $contexto,
+                            'pagina' => $this->determinarPagina($posicao, $mapaPaginas),
+                        ];
+                        $melhorScore = $scoreInscricao;
+                    }
                 }
-            }
             // Buscar inscrição sem o dígito verificador e outras variações
             else if (strlen($inscricaoLimpa) > 3) {
                 $variacoesInscricao = [];
@@ -420,7 +492,8 @@ class PdfProcessorService
                                 'tipo' => 'inscricao_estadual',
                                 'score' => $scoreInscricao,
                                 'posicao' => $posicao,
-                                'contexto' => $contexto
+                                'contexto' => $contexto,
+                                'pagina' => $this->determinarPagina($posicao, $mapaPaginas),
                             ];
                             $melhorScore = $scoreInscricao;
                             break; // Parar na primeira variação encontrada
@@ -439,16 +512,32 @@ class PdfProcessorService
             'cnpj' => $empresa->cnpj
         ]);
         
-        if (strpos($textoNormalizado, $nomeNormalizado) !== false) {
-            $posicao = strpos($textoNormalizado, $nomeNormalizado);
-            $contexto = $this->extrairContexto($textoOriginal, $posicao, strlen($nomeNormalizado));
-            
-            $scoreNome = $this->calcularScoreNome($nomeNormalizado, $textoNormalizado, $empresa);
-            
-            // Bônus se encontrar CNPJ próximo no contexto (alta confiança)
-            if ($empresa->cnpj && $this->encontrarCnpjProximo($empresa->cnpj, $contexto)) {
-                $scoreNome += 0.15;
+            if ($this->textoContemTermoExato($textoNormalizado, $nomeNormalizado)) {
+                $posicao = $this->posicaoTermoExato($textoNormalizado, $nomeNormalizado);
+                $contexto = $this->extrairContexto($textoOriginal, $posicao, strlen($nomeNormalizado));
+                
+                $scoreNome = $this->calcularScoreNome($nomeNormalizado, $textoNormalizado, $empresa);
+                $empresaSemDocumento = empty($empresa->cnpj) && empty($empresa->inscricao_estadual);
+                
+                // Bônus se encontrar CNPJ próximo no contexto (alta confiança)
+                $hasDocProximo = false;
+                if ($empresa->cnpj && $this->encontrarCnpjProximo($empresa->cnpj, $contexto)) {
+                    $scoreNome += 0.15;
+                $hasDocProximo = true;
                 Log::debug("Bônus CNPJ próximo aplicado para: {$empresa->nome}");
+            }
+            if ($empresa->inscricao_estadual && $this->encontrarInscricaoProxima($empresa->inscricao_estadual, $contexto)) {
+                $scoreNome += 0.1;
+                $hasDocProximo = true;
+                Log::debug("Bônus IE próxima aplicada para: {$empresa->nome}");
+            }
+            // Se a empresa não tem CNPJ nem inscrição, não penalizar; dar leve bônus
+            if ($empresaSemDocumento && !$hasDocProximo) {
+                $scoreNome += 0.05;
+            }
+            // Penalizar se não encontrou documento próximo e a empresa possui documento (evita falsos positivos tipo PHARMA vs RMA)
+            elseif (!$hasDocProximo) {
+                $scoreNome -= 0.2;
             }
             
             if ($scoreNome > $melhorScore) {
@@ -457,7 +546,8 @@ class PdfProcessorService
                     'tipo' => 'nome',
                     'score' => $scoreNome,
                     'posicao' => $posicao,
-                    'contexto' => $contexto
+                    'contexto' => $contexto,
+                    'pagina' => $this->determinarPagina($posicao, $mapaPaginas),
                 ];
                 $melhorScore = $scoreNome;
                 
@@ -473,8 +563,8 @@ class PdfProcessorService
                 if (strlen($variante) < 3) continue;
                 
                 $varianteNormalizada = $this->normalizarTexto($variante);
-                if (strpos($textoNormalizado, $varianteNormalizada) !== false) {
-                    $posicao = strpos($textoNormalizado, $varianteNormalizada);
+                if ($this->textoContemTermoExato($textoNormalizado, $varianteNormalizada)) {
+                    $posicao = $this->posicaoTermoExato($textoNormalizado, $varianteNormalizada);
                     $contexto = $this->extrairContexto($textoOriginal, $posicao, strlen($varianteNormalizada));
                     
                     $scoreVariante = $this->calcularScoreNome($varianteNormalizada, $textoNormalizado, $empresa) * 0.8; // Reduzir um pouco
@@ -484,7 +574,8 @@ class PdfProcessorService
                             'tipo' => 'variante',
                             'score' => $scoreVariante,
                             'posicao' => $posicao,
-                            'contexto' => $contexto
+                            'contexto' => $contexto,
+                            'pagina' => $this->determinarPagina($posicao, $mapaPaginas),
                         ];
                         $melhorScore = $scoreVariante;
                     }
@@ -500,7 +591,7 @@ class PdfProcessorService
      */
     protected function calcularScoreNome(string $nome, string $texto, Empresa $empresa): float
     {
-        $score = 0.7; // Score base para nomes aumentado
+        $score = 0.7; // Score base para nomes
         
         // Bônus significativo para nomes longos e específicos como MUNDIAL INDUSTRIA E COMERCIO DE PRODUTOS DE HIGIENE LTDA
         $tamanho = strlen($nome);
@@ -569,6 +660,21 @@ class PdfProcessorService
         return min(1.0, max(0.0, $score));
     }
 
+    protected function textoContemTermoExato(string $textoNormalizado, string $termoNormalizado): bool
+    {
+        $pattern = '/(?<!\p{L})' . preg_quote($termoNormalizado, '/') . '(?!\p{L})/u';
+        return preg_match($pattern, $textoNormalizado) === 1;
+    }
+
+    protected function posicaoTermoExato(string $textoNormalizado, string $termoNormalizado): int
+    {
+        $pattern = '/(?<!\p{L})' . preg_quote($termoNormalizado, '/') . '(?!\p{L})/u';
+        if (preg_match($pattern, $textoNormalizado, $matches, PREG_OFFSET_CAPTURE)) {
+            return $matches[0][1];
+        }
+        return strpos($textoNormalizado, $termoNormalizado) ?: 0;
+    }
+
     protected function isTermoExato(string $termo, string $contexto): bool
     {
         // Verifica se o termo está cercado por delimitadores (espaços, pontuação)
@@ -626,6 +732,62 @@ class PdfProcessorService
 
         // Por padrão, considerar termo personalizado
         return 'termo_personalizado';
+    }
+
+    protected function determinarPagina(int $posicao, array $mapaPaginas): int
+    {
+        foreach ($mapaPaginas as $pagina) {
+            if ($posicao >= $pagina['start'] && $posicao <= $pagina['end']) {
+                return $pagina['pagina'];
+            }
+        }
+        return 1;
+    }
+
+    protected function sanearTextoBasico(string $texto): string
+    {
+        $texto = mb_convert_encoding($texto, 'UTF-8', 'UTF-8');
+        $texto = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $texto);
+        $texto = preg_replace('/[\x{0080}-\x{009F}]/u', '', $texto);
+        $texto = preg_replace('/\s+/', ' ', $texto);
+        return trim($texto);
+    }
+
+    protected function getDiariosDisk()
+    {
+        $diskName = config('filesystems.diarios_disk', 'diarios');
+        return Storage::disk($diskName);
+    }
+
+    /**
+     * Retorna caminho local do PDF; se não for disco local, baixa para tmp.
+     */
+    protected function obterCaminhoLocalPdf(Diario $diario): array
+    {
+        $disk = $this->getDiariosDisk();
+        $adapter = $disk->getAdapter();
+
+        // Se for local (adapter com getPathPrefix)
+        if (method_exists($adapter, 'getPathPrefix')) {
+            $path = $adapter->getPathPrefix() . $diario->caminho_arquivo;
+            if (!file_exists($path)) {
+                throw new \Exception("Arquivo PDF não encontrado: {$path}");
+            }
+            return [$path, null];
+        }
+
+        // Caso contrário, baixar para temp
+        $tmpFile = tempnam(sys_get_temp_dir(), 'pdf_');
+        $stream = $disk->readStream($diario->caminho_arquivo);
+        if (!$stream) {
+            throw new \Exception("Não foi possível ler o PDF do storage: {$diario->caminho_arquivo}");
+        }
+        $out = fopen($tmpFile, 'w+b');
+        stream_copy_to_stream($stream, $out);
+        fclose($stream);
+        fclose($out);
+
+        return [$tmpFile, $tmpFile];
     }
     
     /**

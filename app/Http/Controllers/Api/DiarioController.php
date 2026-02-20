@@ -125,15 +125,14 @@ class DiarioController extends Controller
      */
     public function download(Diario $diario): BinaryFileResponse
     {
-        if (!Storage::exists($diario->caminho_arquivo)) {
+        $disk = Storage::disk(config('filesystems.diarios_disk', 'diarios'));
+        if (!$disk->exists($diario->caminho_arquivo)) {
             abort(404, 'Arquivo não encontrado.');
         }
 
-        return response()->download(
-            Storage::path($diario->caminho_arquivo),
-            $diario->nome_arquivo,
-            ['Content-Type' => 'application/pdf']
-        );
+        return $disk->download($diario->caminho_arquivo, $diario->nome_arquivo, [
+            'Content-Type' => 'application/pdf',
+        ]);
     }
 
     /**
@@ -170,9 +169,10 @@ class DiarioController extends Controller
     public function destroy(Diario $diario): JsonResponse
     {
         try {
+            $disk = Storage::disk(config('filesystems.diarios_disk', 'diarios'));
             // Deletar arquivo físico
-            if (Storage::exists($diario->caminho_arquivo)) {
-                Storage::delete($diario->caminho_arquivo);
+            if ($disk->exists($diario->caminho_arquivo)) {
+                $disk->delete($diario->caminho_arquivo);
             }
 
             // Deletar registro (cascata deleta ocorrências)

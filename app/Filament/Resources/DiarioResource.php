@@ -41,6 +41,7 @@ class DiarioResource extends Resource
                         Forms\Components\FileUpload::make('arquivo')
                             ->label('Arquivo PDF')
                             ->directory('diarios')
+                            ->disk(config('filesystems.diarios_disk', 'diarios'))
                             ->acceptedFileTypes(['application/pdf'])
                             ->maxSize(50 * 1024) // 50MB
                             ->required()
@@ -403,28 +404,55 @@ class DiarioResource extends Resource
                 Tables\Actions\DeleteAction::make()
                     ->requiresConfirmation()
                     ->visible(fn ($record) => $record->status === 'pendente'),
-                Tables\Actions\Action::make('reprocessar')
-                    ->label('Reprocessar')
-                    ->icon('heroicon-o-arrow-path')
-                    ->color('warning')
-                    ->visible(fn ($record) => in_array($record->status, ['erro', 'pendente']))
+                Tables\Actions\Action::make('processar')
+                    ->label('Processar')
+                    ->icon('heroicon-o-play')
+                    ->color('success')
+                    ->visible(fn ($record) => in_array($record->status, ['pendente', 'erro']))
                     ->requiresConfirmation()
                     ->action(function ($record) {
-                        $processorService = new \App\Services\PdfProcessorService();
-                        $resultado = $processorService->processarPdf($record);
-                        
-                        if ($resultado['sucesso']) {
+                        $record->update([
+                            'status' => 'processando',
+                            'status_processamento' => 'processando',
+                            'erro_mensagem' => null,
+                            'erro_processamento' => null,
+                        ]);
+
+                        $processamentoAssincrono = \App\Models\ConfiguracaoSistema::get('processamento_assincrono', true);
+
+                        if ($processamentoAssincrono) {
+                            \App\Jobs\ProcessarPdfJob::dispatch($record);
                             \Filament\Notifications\Notification::make()
-                                ->title('PDF Reprocessado!')
-                                ->body("Ocorrências encontradas: {$resultado['ocorrencias_encontradas']}")
+                                ->title('Processamento enfileirado')
+                                ->body('O diário foi enviado para a fila. Você será notificado ao concluir.')
                                 ->success()
                                 ->send();
                         } else {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Erro no Reprocessamento')
-                                ->body($resultado['erro'])
-                                ->danger()
-                                ->send();
+                            try {
+                                $processorService = new \App\Services\PdfProcessorService();
+                                $resultado = $processorService->processarPdf($record);
+
+                                if ($resultado['sucesso']) {
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('PDF Processado!')
+                                        ->body("Ocorrências encontradas: {$resultado['ocorrencias_encontradas']}")
+                                        ->success()
+                                        ->send();
+                                } else {
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('Erro no Processamento')
+                                        ->body($resultado['erro'])
+                                        ->danger()
+                                        ->send();
+                                }
+                            } catch (\Throwable $e) {
+                                \App\Jobs\ProcessarPdfJob::dispatch($record);
+                                \Filament\Notifications\Notification::make()
+                                    ->title('Enviado para fila')
+                                    ->body('Processamento síncrono falhou; o diário foi enviado para a fila.')
+                                    ->warning()
+                                    ->send();
+                            }
                         }
                     }),
                 Tables\Actions\Action::make('download_pdf')
@@ -432,16 +460,36 @@ class DiarioResource extends Resource
                     ->icon('heroicon-o-document-arrow-down')
                     ->color('info')
                     ->visible(fn ($record) => $record->caminho_arquivo)
-                    ->url(fn ($record) => Storage::disk('public')->url($record->caminho_arquivo))
-                    ->openUrlInNewTab(),
+                    ->action(function ($record) {
+                        $disk = Storage::disk(config('filesystems.diarios_disk', 'diarios'));
+                        $stream = $disk->readStream($record->caminho_arquivo);
+                        if (!$stream) {
+                            \Filament\Notifications\Notification::make()
+                                ->title('Arquivo indisponível')
+                                ->body('Não foi possível ler o PDF do storage.')
+                                ->danger()
+                                ->send();
+                            return;
+                        }
+                        $filename = $record->nome_arquivo ?? basename($record->caminho_arquivo);
+                        return response()->streamDownload(function () use ($stream) {
+                            fpassthru($stream);
+                            if (is_resource($stream)) {
+                                fclose($stream);
+                            }
+                        }, $filename, [
+                            'Content-Type' => 'application/pdf',
+                        ]);
+                    }),
                     
                 Tables\Actions\Action::make('download_texto')
                     ->label('Download Texto')
                     ->icon('heroicon-o-document-text')
                     ->color('success')
-                    ->visible(fn ($record) => $record->caminho_texto_completo && Storage::disk('public')->exists($record->caminho_texto_completo))
+                    ->visible(fn ($record) => $record->caminho_texto_completo && Storage::disk(config('filesystems.diarios_disk', 'diarios'))->exists($record->caminho_texto_completo))
                     ->action(function ($record) {
-                        $conteudo = Storage::disk('public')->get($record->caminho_texto_completo);
+                        $disk = Storage::disk(config('filesystems.diarios_disk', 'diarios'));
+                        $conteudo = $disk->get($record->caminho_texto_completo);
                         $nomeArquivo = 'texto_extraido_' . $record->nome_arquivo . '.txt';
                         
                         return response()->streamDownload(function () use ($conteudo) {
@@ -456,20 +504,43 @@ class DiarioResource extends Resource
                     Tables\Actions\DeleteBulkAction::make()
                         ->requiresConfirmation(),
                     Tables\Actions\BulkAction::make('reprocessar')
-                        ->label('Reprocessar Selecionados')
+                        ->label('Processar Selecionados')
                         ->icon('heroicon-o-arrow-path')
-                        ->color('warning')
+                        ->color('success')
+                        ->requiresConfirmation()
                         ->action(function ($records) {
-                            $records->each(function ($record) {
-                                if ($record->status === 'erro' && $record->podeSerReprocessado()) {
-                                    $record->update([
-                                        'status' => 'pendente',
-                                        'erro_mensagem' => null,
-                                    ]);
+                            $processamentoAssincrono = \App\Models\ConfiguracaoSistema::get('processamento_assincrono', true);
+                            
+                            $records->each(function ($record) use ($processamentoAssincrono) {
+                                if (!in_array($record->status, ['pendente', 'erro'])) {
+                                    return;
+                                }
+                                
+                                $record->update([
+                                    'status' => 'processando',
+                                    'status_processamento' => 'processando',
+                                    'erro_mensagem' => null,
+                                    'erro_processamento' => null,
+                                ]);
+
+                                if ($processamentoAssincrono) {
+                                    \App\Jobs\ProcessarPdfJob::dispatch($record);
+                                } else {
+                                    try {
+                                        $processorService = new \App\Services\PdfProcessorService();
+                                        $processorService->processarPdf($record);
+                                    } catch (\Throwable $e) {
+                                        \App\Jobs\ProcessarPdfJob::dispatch($record);
+                                    }
                                 }
                             });
-                        })
-                        ->requiresConfirmation(),
+
+                            \Filament\Notifications\Notification::make()
+                                ->title('Processamento iniciado')
+                                ->body('Os diários selecionados foram enviados para processamento.')
+                                ->success()
+                                ->send();
+                        }),
                 ]),
             ])
             ->emptyStateActions([
@@ -492,5 +563,26 @@ class DiarioResource extends Resource
             'create' => Pages\CreateDiario::route('/create'),
             'edit' => Pages\EditDiario::route('/{record}/edit'),
         ];
+    }
+
+    protected static function pdfUrl($record): ?string
+    {
+        if (!$record?->caminho_arquivo) {
+            return null;
+        }
+        return route('diarios.arquivo', ['diario' => $record]);
+    }
+
+    protected static function ajustarEndpointPublico(?string $url): ?string
+    {
+        if (!$url) return null;
+        $publicEndpoint = rtrim(env('DIARIOS_PUBLIC_ENDPOINT', ''), '/');
+        $internalEndpoint = rtrim(env('DIARIOS_ENDPOINT', env('AWS_ENDPOINT', '')), '/');
+
+        if ($publicEndpoint && $internalEndpoint) {
+            return str_replace($internalEndpoint, $publicEndpoint, $url);
+        }
+
+        return $url;
     }
 }

@@ -33,7 +33,13 @@ class ProcessarPdfJob implements ShouldQueue
     {
         try {
             Log::info("Iniciando processamento assíncrono do PDF: {$this->diario->nome_arquivo}");
-            
+            $this->diario->update([
+                'status' => 'processando',
+                'status_processamento' => 'processando',
+                'erro_mensagem' => null,
+                'erro_processamento' => null,
+            ]);
+
             $processorService = new PdfProcessorService();
             $resultado = $processorService->processarPdf($this->diario);
             

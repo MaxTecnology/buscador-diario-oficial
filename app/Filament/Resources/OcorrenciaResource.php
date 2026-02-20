@@ -18,6 +18,9 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\TernaryFilter;
 use App\Services\NotificationService;
 use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Filament\Tables\Actions\Action;
 
 class OcorrenciaResource extends Resource
 {
@@ -186,6 +189,7 @@ class OcorrenciaResource extends Resource
                     ->tooltip(function ($record) {
                         return $record->termo_encontrado;
                     }),
+                // Contexto removido da tabela para manter a lista mais limpa; detalhes via ação
                 Tables\Columns\TextColumn::make('tipo_match')
                     ->label('Tipo')
                     ->badge()
@@ -205,6 +209,24 @@ class OcorrenciaResource extends Resource
                         'termo_personalizado' => 'Termo Personalizado',
                         default => $state,
                     }),
+                Tables\Columns\TextColumn::make('confiabilidade')
+                    ->label('Confiança')
+                    ->badge()
+                    ->color(fn ($state) => $state === 'alta' ? 'success' : 'warning')
+                    ->formatStateUsing(fn ($state) => $state === 'alta' ? 'Alta' : 'Suspeito'),
+                Tables\Columns\TextColumn::make('status_revisao')
+                    ->label('Revisão')
+                    ->badge()
+                    ->color(fn ($state) => match ($state) {
+                        'aprovado' => 'success',
+                        'falso_positivo' => 'danger',
+                        default => 'warning',
+                    })
+                    ->formatStateUsing(fn ($state) => match ($state) {
+                        'aprovado' => 'Aprovado',
+                        'falso_positivo' => 'Falso positivo',
+                        default => 'Pendente',
+                    }),
                 Tables\Columns\TextColumn::make('score_confianca')
                     ->label('Confiança')
                     ->numeric()
@@ -221,6 +243,13 @@ class OcorrenciaResource extends Resource
                     ->label('Página')
                     ->numeric()
                     ->sortable(),
+                Tables\Columns\TextColumn::make('pdf_link')
+                    ->label('PDF')
+                    ->formatStateUsing(fn () => 'Abrir')
+                    ->url(fn ($record) => static::pdfUrl($record), true)
+                    ->openUrlInNewTab()
+                    ->icon('heroicon-o-arrow-top-right-on-square')
+                    ->tooltip('Abrir PDF na página encontrada'),
                 Tables\Columns\IconColumn::make('notificado_email')
                     ->label('Email')
                     ->boolean()
@@ -241,6 +270,100 @@ class OcorrenciaResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
+                SelectFilter::make('diario_id')
+                    ->label('Diário')
+                    ->relationship('diario', 'nome_arquivo')
+                    ->searchable(),
+                SelectFilter::make('diario_estado')
+                    ->label('Estado')
+                    ->options(fn () => \App\Models\Diario::query()->select('estado')->distinct()->pluck('estado', 'estado')->filter())
+                    ->query(function (Builder $query, array $data) {
+                        return $query->when(
+                            $data['value'] ?? null,
+                            fn ($q, $estado) => $q->whereHas('diario', fn ($d) => $d->where('estado', $estado))
+                        );
+                    })
+                    ->searchable(),
+                SelectFilter::make('tipo_match')
+                    ->label('🔍 Tipo de Match')
+                    ->options([
+                        'cnpj' => 'CNPJ',
+                        'inscricao_estadual' => 'Inscrição Estadual',
+                        'nome' => 'Nome',
+                        'variante' => 'Variante',
+                        'termo_personalizado' => 'Termo Personalizado',
+                    ])
+                    ->multiple(),
+                SelectFilter::make('confiabilidade')
+                    ->label('Confiança')
+                    ->options([
+                        'alta' => 'Alta',
+                        'suspeito' => 'Suspeito',
+                    ])
+                    ->multiple(),
+                SelectFilter::make('status_revisao')
+                    ->label('Revisão')
+                    ->options([
+                        'pendente' => 'Pendente',
+                        'aprovado' => 'Aprovado',
+                        'falso_positivo' => 'Falso positivo',
+                    ])
+                    ->multiple(),
+                Filter::make('score_range')
+                    ->label('Score de Confiança')
+                    ->form([
+                        Forms\Components\TextInput::make('score_min')
+                            ->label('Score mínimo')
+                            ->numeric()
+                            ->step(0.01)
+                            ->placeholder('0.70'),
+                        Forms\Components\TextInput::make('score_max')
+                            ->label('Score máximo')
+                            ->numeric()
+                            ->step(0.01)
+                            ->placeholder('1.00'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['score_min'] ?? null,
+                                fn (Builder $query, $score): Builder => $query->where('score_confianca', '>=', $score),
+                            )
+                            ->when(
+                                $data['score_max'] ?? null,
+                                fn (Builder $query, $score): Builder => $query->where('score_confianca', '<=', $score),
+                            );
+                    }),
+                Filter::make('periodo_ocorrencia')
+                    ->label('Período (Encontrado em)')
+                    ->form([
+                        Forms\Components\DatePicker::make('de'),
+                        Forms\Components\DatePicker::make('ate'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['de'] ?? null, fn ($q, $de) => $q->whereDate('created_at', '>=', $de))
+                            ->when($data['ate'] ?? null, fn ($q, $ate) => $q->whereDate('created_at', '<=', $ate));
+                    }),
+                Filter::make('data_diario')
+                    ->label('Data do Diário')
+                    ->form([
+                        Forms\Components\DatePicker::make('data_from')
+                            ->label('Data inicial'),
+                        Forms\Components\DatePicker::make('data_until')
+                            ->label('Data final'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['data_from'] ?? null,
+                                fn (Builder $query, $date): Builder => $query->whereHas('diario', fn ($q) => $q->whereDate('data_diario', '>=', $date)),
+                            )
+                            ->when(
+                                $data['data_until'] ?? null,
+                                fn (Builder $query, $date): Builder => $query->whereHas('diario', fn ($q) => $q->whereDate('data_diario', '<=', $date)),
+                            );
+                    }),
                 // Filtros rápidos de período
                 Filter::make('hoje')
                     ->label('🗓️ Hoje')
@@ -281,47 +404,6 @@ class OcorrenciaResource extends Resource
                     ->searchable()
                     ->preload(),
                     
-                SelectFilter::make('diario.estado')
-                    ->label('🗺️ Estado')
-                    ->relationship('diario', 'estado')
-                    ->multiple()
-                    ->searchable(),
-                    
-                SelectFilter::make('tipo_match')
-                    ->label('🔍 Tipo de Match')
-                    ->options([
-                        'cnpj' => 'CNPJ',
-                        'inscricao_estadual' => 'Inscrição Estadual',
-                        'nome' => 'Nome',
-                        'variante' => 'Variante',
-                        'termo_personalizado' => 'Termo Personalizado',
-                    ])
-                    ->multiple(),
-                Filter::make('score_confianca')
-                    ->label('Score de Confiança')
-                    ->form([
-                        Forms\Components\TextInput::make('score_min')
-                            ->label('Score mínimo')
-                            ->numeric()
-                            ->step(0.01)
-                            ->placeholder('0.70'),
-                        Forms\Components\TextInput::make('score_max')
-                            ->label('Score máximo')
-                            ->numeric()
-                            ->step(0.01)
-                            ->placeholder('1.00'),
-                    ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query
-                            ->when(
-                                $data['score_min'],
-                                fn (Builder $query, $score): Builder => $query->where('score_confianca', '>=', $score),
-                            )
-                            ->when(
-                                $data['score_max'],
-                                fn (Builder $query, $score): Builder => $query->where('score_confianca', '<=', $score),
-                            );
-                    }),
                 TernaryFilter::make('notificado_email')
                     ->label('Notificado por Email')
                     ->boolean()
@@ -356,6 +438,43 @@ class OcorrenciaResource extends Resource
             ], layout: Tables\Enums\FiltersLayout::AboveContentCollapsible)
             ->actions([
                 Tables\Actions\ActionGroup::make([
+                    Action::make('detalhes')
+                        ->label('Detalhes')
+                    ->icon('heroicon-o-eye')
+                    ->modalHeading('Detalhes da Ocorrência')
+                    ->modalWidth('4xl')
+                    ->modalContent(function ($record) {
+                        $pdfUrl = $record->diario?->caminho_arquivo ? route('diarios.arquivo', ['diario' => $record->diario]) : null;
+                        $pagina = $record->pagina ?? 1;
+                        $contexto = e($record->contexto_completo ?? '');
+                        if ($record->termo_encontrado) {
+                            $pattern = '/' . preg_quote($record->termo_encontrado, '/') . '/i';
+                            $contexto = preg_replace($pattern, '<mark>$0</mark>', $contexto);
+                            }
+
+                            return view('filament.ocorrencias.detalhes', [
+                                'record' => $record,
+                                'pdfUrl' => $pdfUrl ? $pdfUrl . '#page=' . $pagina : null,
+                                'contextoHtml' => $contexto,
+                            ]);
+                        }),
+                    Action::make('aprovar')
+                        ->label('Aprovar')
+                        ->icon('heroicon-o-check')
+                        ->color('success')
+                        ->visible(fn ($record) => $record->status_revisao !== 'aprovado')
+                        ->requiresConfirmation()
+                        ->action(fn ($record) => $record->update([
+                            'status_revisao' => 'aprovado',
+                            'confiabilidade' => $record->confiabilidade === 'suspeito' ? 'alta' : $record->confiabilidade,
+                        ])),
+                    Action::make('falso_positivo')
+                        ->label('Falso positivo')
+                        ->icon('heroicon-o-x-mark')
+                        ->color('danger')
+                        ->visible(fn ($record) => $record->status_revisao !== 'falso_positivo')
+                        ->requiresConfirmation()
+                        ->action(fn ($record) => $record->update(['status_revisao' => 'falso_positivo'])),
                     Tables\Actions\Action::make('enviar_notificacoes')
                         ->label('Enviar Notificações')
                         ->icon('heroicon-o-bell')
@@ -513,5 +632,27 @@ class OcorrenciaResource extends Resource
     public static function canDelete($record): bool
     {
         return false;
+    }
+
+    protected static function pdfUrl($record): ?string
+    {
+        if (!$record->diario?->caminho_arquivo) {
+            return null;
+        }
+        $baseUrl = route('diarios.arquivo', ['diario' => $record->diario]);
+        return $baseUrl . '#page=' . ($record->pagina ?? 1);
+    }
+
+    protected function ajustarEndpointPublico(?string $url): ?string
+    {
+        if (!$url) return null;
+        $publicEndpoint = rtrim(env('DIARIOS_PUBLIC_ENDPOINT', ''), '/');
+        $internalEndpoint = rtrim(env('DIARIOS_ENDPOINT', env('AWS_ENDPOINT', '')), '/');
+
+        if ($publicEndpoint && $internalEndpoint) {
+            return str_replace($internalEndpoint, $publicEndpoint, $url);
+        }
+
+        return $url;
     }
 }

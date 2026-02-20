@@ -83,8 +83,10 @@ class EmpresaEncontradaMail extends Mailable implements ShouldQueue
         // Opcionalmente anexar o PDF completo ou página específica
         $anexarPdf = SystemConfig::get('notifications.email_attach_pdf', false);
         
-        if ($anexarPdf && Storage::exists($this->ocorrencia->diario->caminho_arquivo)) {
-            $attachments[] = Attachment::fromStorage($this->ocorrencia->diario->caminho_arquivo)
+        $disk = Storage::disk(config('filesystems.diarios_disk', 'diarios'));
+
+        if ($anexarPdf && $disk->exists($this->ocorrencia->diario->caminho_arquivo)) {
+            $attachments[] = Attachment::fromStorageDisk(config('filesystems.diarios_disk', 'diarios'), $this->ocorrencia->diario->caminho_arquivo)
                 ->as($this->ocorrencia->diario->nome_arquivo)
                 ->withMime('application/pdf');
         }

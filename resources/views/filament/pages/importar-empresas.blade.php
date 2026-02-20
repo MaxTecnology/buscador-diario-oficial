@@ -13,9 +13,10 @@
                     <div class="mt-1 text-sm text-blue-700 dark:text-blue-300">
                         <p><strong>Formato:</strong> CNPJ;RAZAO_SOCIAL;NOME_FANTASIA;INSCRICAO_ESTADUAL;OBSERVACOES</p>
                         <p><strong>Separador:</strong> Ponto e vírgula (;)</p>
-                        <p><strong>Obrigatório:</strong> CNPJ e Razão Social</p>
-                        <p><strong>CNPJ:</strong> Apenas números (14 dígitos)</p>
+                        <p><strong>Obrigatório:</strong> CNPJ/CPF e Razão Social</p>
+                        <p><strong>CNPJ/CPF:</strong> Apenas números (11 ou 14 dígitos)</p>
                         <p><strong>Nome Fantasia:</strong> Será usado como termo de busca nos diários (recomendado preencher)</p>
+                        <p><strong>Inscrição Estadual:</strong> Use "0" ou vazio se não houver</p>
                     </div>
                 </div>
             </div>
@@ -24,9 +25,9 @@
         <!-- Exemplo -->
         <div class="bg-gray-50 dark:bg-gray-900/20 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
             <h4 class="text-sm font-medium text-gray-800 dark:text-gray-200 mb-2">💡 Exemplo de CSV:</h4>
-            <pre class="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded border text-gray-700 dark:text-gray-300">12345678000199;SUPERMERCADO EXEMPLO LTDA;SUPERMERCADO EXEMPLO;100200300;;
-98765432000987;LOJA DE TESTE LTDA;LOJA DE TESTE;200300400;;
-45678912000456;MERCADO GENÉRICO SA;MERCADO GENÉRICO;300400500;;
+            <pre class="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded border text-gray-700 dark:text-gray-300">00000000000123;EMPRESA FICTICIA UM;EMPRESA FICTICIA UM;0;;
+12345678000199;SUPERMERCADO EXEMPLO LTDA;SUPERMERCADO EXEMPLO;100200300;;
+98765432000111;LOJA DEMO LTDA;LOJA DEMO;200300400;;
 </pre>
         </div>
 
@@ -45,9 +46,10 @@
                     <h3 class="text-sm font-medium text-yellow-800 dark:text-yellow-200">⚠️ Observações Importantes</h3>
                     <div class="mt-1 text-sm text-yellow-700 dark:text-yellow-300">
                         <ul class="list-disc list-inside space-y-1">
-                            <li>Empresas com CNPJ duplicado serão puladas</li>
-                            <li><strong>Nome Fantasia será adicionado como "Termo de Busca Personalizado"</strong> - o sistema buscará tanto pela Razão Social quanto pelo Nome Fantasia nos diários</li>
+                            <li>CNPJ/CPF duplicado será atualizado (não cria registro novo)</li>
+                            <li><strong>Nome Fantasia será adicionado como "Termo de Busca Personalizado"</strong></li>
                             <li>Variações do nome fantasia (sem LTDA, ME, etc.) também serão adicionadas automaticamente</li>
+                            <li>Inscrição Estadual com "0" ou vazia é tratada como nula</li>
                             <li>Todas as empresas serão criadas com prioridade "média" e score mínimo 85%</li>
                             <li>Máximo 10MB por arquivo</li>
                         </ul>

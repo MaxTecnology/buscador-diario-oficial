@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\OcorrenciaResource\Pages;
 
 use App\Filament\Resources\OcorrenciaResource;
+use App\Filament\Resources\OcorrenciaResource\Widgets\OcorrenciasStats;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
 
@@ -25,5 +26,12 @@ class ListOcorrencias extends ListRecords
     public function getDefaultTableRecordsPerPageSelectOption(): int
     {
         return 50;
+    }
+
+    protected function getHeaderWidgets(): array
+    {
+        return [
+            OcorrenciasStats::class,
+        ];
     }
 }

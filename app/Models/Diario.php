@@ -134,13 +134,14 @@ class Diario extends Model
 
         static::deleting(function ($diario) {
             // Remover arquivo PDF
-            if ($diario->caminho_arquivo && \Illuminate\Support\Facades\Storage::disk('public')->exists($diario->caminho_arquivo)) {
-                \Illuminate\Support\Facades\Storage::disk('public')->delete($diario->caminho_arquivo);
+            $disk = \Illuminate\Support\Facades\Storage::disk(config('filesystems.diarios_disk', 'diarios'));
+            if ($diario->caminho_arquivo && $disk->exists($diario->caminho_arquivo)) {
+                $disk->delete($diario->caminho_arquivo);
             }
             
             // Remover arquivo de texto extraído
-            if ($diario->caminho_texto_completo && \Illuminate\Support\Facades\Storage::disk('public')->exists($diario->caminho_texto_completo)) {
-                \Illuminate\Support\Facades\Storage::disk('public')->delete($diario->caminho_texto_completo);
+            if ($diario->caminho_texto_completo && $disk->exists($diario->caminho_texto_completo)) {
+                $disk->delete($diario->caminho_texto_completo);
             }
         });
     }

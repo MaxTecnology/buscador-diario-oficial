@@ -22,6 +22,8 @@ class Ocorrencia extends Model
         'posicao_inicio',
         'posicao_fim',
         'score_confianca',
+        'confiabilidade',
+        'status_revisao',
         'pagina',
         'notificado_email',
         'notificado_whatsapp',
@@ -34,6 +36,8 @@ class Ocorrencia extends Model
             'posicao_inicio' => 'integer',
             'posicao_fim' => 'integer',
             'score_confianca' => 'decimal:2',
+            'confiabilidade' => 'string',
+            'status_revisao' => 'string',
             'pagina' => 'integer',
             'notificado_email' => 'boolean',
             'notificado_whatsapp' => 'boolean',
@@ -75,6 +79,21 @@ class Ocorrencia extends Model
     public function scopePorDiario($query, int $diarioId)
     {
         return $query->where('diario_id', $diarioId);
+    }
+
+    public function scopeSuspeitos($query)
+    {
+        return $query->where('confiabilidade', 'suspeito');
+    }
+
+    public function scopeAltaConfianca($query)
+    {
+        return $query->where('confiabilidade', 'alta');
+    }
+
+    public function scopePendentes($query)
+    {
+        return $query->where('status_revisao', 'pendente');
     }
 
     public function marcarComoNotificadoPorEmail(): void

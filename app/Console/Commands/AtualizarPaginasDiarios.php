@@ -52,15 +52,24 @@ class AtualizarPaginasDiarios extends Command
         
         foreach ($diarios as $diario) {
             try {
-                $caminhoArquivo = storage_path('app/public/' . $diario->caminho_arquivo);
-                
-                if (!file_exists($caminhoArquivo)) {
-                    $this->newLine();
-                    $this->warn("Arquivo não encontrado: {$diario->nome_arquivo}");
-                    $erros++;
-                    continue;
+                $disk = \Illuminate\Support\Facades\Storage::disk(config('filesystems.diarios_disk', 'diarios'));
+                $adapter = $disk->getAdapter();
+                $tmpFile = null;
+                if (method_exists($adapter, 'getPathPrefix')) {
+                    $caminhoArquivo = $adapter->getPathPrefix() . $diario->caminho_arquivo;
+                } else {
+                    $tmpFile = tempnam(sys_get_temp_dir(), 'pdf_');
+                    $stream = $disk->readStream($diario->caminho_arquivo);
+                    if (!$stream) {
+                        throw new \Exception("Não foi possível ler o PDF: {$diario->caminho_arquivo}");
+                    }
+                    $out = fopen($tmpFile, 'w+b');
+                    stream_copy_to_stream($stream, $out);
+                    fclose($stream);
+                    fclose($out);
+                    $caminhoArquivo = $tmpFile;
                 }
-                
+
                 $pdf = $parser->parseFile($caminhoArquivo);
                 $totalPaginas = $this->contarPaginasPdf($pdf);
                 
@@ -74,6 +83,9 @@ class AtualizarPaginasDiarios extends Command
                 $erros++;
             }
             
+            if ($tmpFile && file_exists($tmpFile)) {
+                @unlink($tmpFile);
+            }
             $bar->advance();
         }
         

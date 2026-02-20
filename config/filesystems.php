@@ -15,6 +15,8 @@ return [
 
     'default' => env('FILESYSTEM_DISK', 'local'),
 
+    'diarios_disk' => env('DIARIOS_DISK', 'diarios'),
+
     /*
     |--------------------------------------------------------------------------
     | Filesystem Disks
@@ -56,6 +58,19 @@ return [
             'url' => env('AWS_URL'),
             'endpoint' => env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+            'throw' => false,
+            'report' => false,
+        ],
+
+        'diarios' => [
+            'driver' => 's3',
+            'key' => env('DIARIOS_KEY', env('AWS_ACCESS_KEY_ID')),
+            'secret' => env('DIARIOS_SECRET', env('AWS_SECRET_ACCESS_KEY')),
+            'region' => env('DIARIOS_REGION', env('AWS_DEFAULT_REGION')),
+            'bucket' => env('DIARIOS_BUCKET', env('AWS_BUCKET')),
+            'url' => env('DIARIOS_URL', env('AWS_URL')),
+            'endpoint' => env('DIARIOS_ENDPOINT', env('AWS_ENDPOINT')),
+            'use_path_style_endpoint' => env('DIARIOS_USE_PATH_STYLE', env('AWS_USE_PATH_STYLE_ENDPOINT', true)),
             'throw' => false,
             'report' => false,
         ],

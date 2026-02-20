@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Diario;
 use App\Models\SystemConfig;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class DiarioProcessingService
 {
@@ -229,7 +230,22 @@ class DiarioProcessingService
         $problemas = [];
 
         foreach ($diarios as $diario) {
-            $caminhoCompleto = storage_path('app/' . $diario->caminho_arquivo);
+                $disk = Storage::disk(config('filesystems.diarios_disk', 'diarios'));
+                $adapter = $disk->getAdapter();
+                if (method_exists($adapter, 'getPathPrefix')) {
+                    $caminhoCompleto = $adapter->getPathPrefix() . $diario->caminho_arquivo;
+                } else {
+                    $tmpFile = tempnam(sys_get_temp_dir(), 'pdf_');
+                    $stream = $disk->readStream($diario->caminho_arquivo);
+                    if (!$stream) {
+                        throw new \Exception("Não foi possível ler o PDF do storage: {$diario->caminho_arquivo}");
+                    }
+                    $out = fopen($tmpFile, 'w+b');
+                    stream_copy_to_stream($stream, $out);
+                    fclose($stream);
+                    fclose($out);
+                    $caminhoCompleto = $tmpFile;
+                }
             
             if (!file_exists($caminhoCompleto)) {
                 $problemas[] = [

@@ -18,9 +18,6 @@ class DatabaseSeeder extends Seeder
             SystemConfigSeeder::class,
             ConfiguracaoSistemaSeeder::class,
             AdminUserSeeder::class,
-            EmpresaSeeder::class,
-            DiarioSeeder::class,
-            OcorrenciaSeeder::class,
         ]);
     }
 }
