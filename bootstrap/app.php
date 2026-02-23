@@ -11,6 +11,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Necessário atrás de reverse proxy (Dockploy / Traefik / Nginx Proxy)
+        $middleware->trustProxies(at: env('TRUSTED_PROXIES', '*'));
+
         // Registrar middlewares personalizados
         $middleware->alias([
             'role' => \App\Http\Middleware\RoleMiddleware::class,
