@@ -52,13 +52,6 @@ class ConfiguracaoSistemaSeeder extends Seeder
             
             // Configurações de processamento
             [
-                'chave' => 'processamento_automatico',
-                'valor' => '0',
-                'tipo' => 'boolean',
-                'descricao' => 'Processar PDFs automaticamente após upload',
-                'categoria' => 'processamento',
-            ],
-            [
                 'chave' => 'notificacao_automatica_apos_processamento',
                 'valor' => '0',
                 'tipo' => 'boolean',

@@ -8,7 +8,6 @@ use App\Models\Ocorrencia;
 use App\Models\User;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
-use Illuminate\Support\Facades\DB;
 
 class StatsOverview extends BaseWidget
 {
@@ -52,6 +51,11 @@ class StatsOverview extends BaseWidget
                 ->description($ocorrenciasHoje . ' encontradas hoje')
                 ->descriptionIcon('heroicon-m-magnifying-glass')
                 ->color('primary'),
+
+            Stat::make('Ocorrências do Dia', $ocorrenciasHoje)
+                ->description('Registros criados hoje')
+                ->descriptionIcon('heroicon-m-sparkles')
+                ->color($ocorrenciasHoje > 0 ? 'warning' : 'success'),
                 
             Stat::make('Diários Hoje', Diario::whereDate('created_at', today())->count())
                 ->description('Diários enviados hoje')

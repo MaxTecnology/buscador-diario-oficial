@@ -18,11 +18,11 @@ class TemplatesNotificacao extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-chat-bubble-left-right';
     
-    protected static ?string $navigationGroup = 'Sistema';
+    protected static ?string $navigationGroup = 'Configurações';
     
     protected static ?string $title = 'Templates de Notificação';
     
-    protected static ?int $navigationSort = 3;
+    protected static ?int $navigationSort = 2;
 
     protected static string $view = 'filament.pages.templates-notificacao';
     
@@ -55,7 +55,10 @@ class TemplatesNotificacao extends Page implements HasForms
 • {empresa} - Nome da empresa
 • {diario} - Nome do diário
 • {score} - Score de confiança (%)
-• {data} - Data e hora')
+• {data} - Data e hora
+• {termo} - Termo encontrado
+• {tipo} - Tipo de match
+• {contexto} - Trecho resumido')
                             ->columnSpanFull(),
                     ]),
                     
@@ -76,6 +79,9 @@ class TemplatesNotificacao extends Page implements HasForms
 • {diario} - Nome do diário  
 • {score} - Score de confiança
 • {data} - Data e hora da ocorrência
+• {termo} - Termo encontrado
+• {tipo} - Tipo de match
+• {contexto} - Trecho resumido da ocorrência
 
 **✅ Exemplo prático:**
 🔔 *Nova Ocorrência*
@@ -83,13 +89,17 @@ class TemplatesNotificacao extends Page implements HasForms
 📋 Empresa: {empresa}
 📄 Arquivo: {diario}
 📊 Confiança: {score}
-📅 Data: {data}')
+📅 Data: {data}
+🔎 Termo: {termo}
+🎯 Tipo: {tipo}')
                             ->placeholder('🔔 *Nova Ocorrência Encontrada*
 
 📋 Empresa: {empresa}
 📄 Diário: {diario}
 📊 Score: {score}
-📅 Data: {data}')
+📅 Data: {data}
+🔎 Termo: {termo}
+🎯 Tipo: {tipo}')
                             ->columnSpanFull(),
                     ]),
             ])

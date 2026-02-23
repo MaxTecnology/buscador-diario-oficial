@@ -3,10 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Widgets\StatsOverview;
-use App\Filament\Widgets\OcorrenciasChart;
-use App\Filament\Widgets\DiariosPorEstado;
-use App\Filament\Widgets\UltimosProcessamentos;
-use App\Filament\Widgets\OcorrenciasRecentes;
+use App\Filament\Widgets\NotificationStats;
 use Filament\Pages\Dashboard as BaseDashboard;
 
 class Dashboard extends BaseDashboard
@@ -19,11 +16,7 @@ class Dashboard extends BaseDashboard
     {
         return [
             StatsOverview::class,
-            \App\Filament\Widgets\NotificationStats::class,
-            OcorrenciasChart::class,
-            DiariosPorEstado::class,
-            UltimosProcessamentos::class,
-            OcorrenciasRecentes::class,
+            NotificationStats::class,
         ];
     }
 

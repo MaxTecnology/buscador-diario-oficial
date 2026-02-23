@@ -107,3 +107,54 @@ Isso reduz risco de exposicao sem mexer no core de negocio.
 - Arquivo: `.env.example`
 - Variavel: `SCRIBE_ADD_ROUTES=true`
 - Uso: em dev/local, habilitar explicitamente quando precisar da documentacao web.
+
+3. Remocao de pagina legada de monitoramento:
+- Rota removida: `/admin/dashboard-diarios`
+- Arquivos removidos:
+  - `app/Filament/Pages/DashboardDiarios.php`
+  - `resources/views/filament/pages/dashboard-diarios.blade.php`
+- Resultado: item saiu do painel e rota nao existe mais.
+
+4. Remocao de relatorios no painel:
+- Rotas removidas:
+  - `/admin/relatorio-diarios`
+  - `/admin/relatorio-empresas`
+  - `/admin/relatorio-ocorrencias`
+- Arquivos removidos:
+  - `app/Filament/Pages/RelatorioDiarios.php`
+  - `app/Filament/Pages/RelatorioEmpresas.php`
+  - `app/Filament/Pages/RelatorioOcorrencias.php`
+  - `resources/views/filament/pages/relatorio-diarios.blade.php`
+  - `resources/views/filament/pages/relatorio-empresas.blade.php`
+  - `resources/views/filament/pages/relatorio-ocorrencias.blade.php`
+- Resultado: grupo de relatorios saiu do menu e rotas do painel nao existem mais.
+
+5. Remocao da tela legada de configuracoes do sistema:
+- Rotas removidas:
+  - `/admin/configuracoes-sistema`
+  - `/admin/configuracoes-sistema/{record}/edit`
+  - `/admin/configuracoes-sistema/create`
+- Arquivos removidos:
+  - `app/Filament/Resources/ConfiguracaoSistemaResource.php`
+  - `app/Filament/Resources/ConfiguracaoSistemaResource/Pages/ListConfiguracaoSistemas.php`
+  - `app/Filament/Resources/ConfiguracaoSistemaResource/Pages/EditConfiguracaoSistema.php`
+  - `app/Filament/Pages/ConfiguracoesSistema.php`
+  - `resources/views/filament/pages/configuracoes-sistema.blade.php`
+- Resultado: eliminada duplicidade de configuracao e menu mais objetivo.
+
+6. Centralizacao de configuracoes operacionais:
+- Templates de notificacao centralizados em `/admin/templates-notificacao`.
+- Configuracoes de WhatsApp centralizadas em `/admin/whats-app-settings`.
+- Variaveis suportadas para templates: `{empresa}`, `{diario}`, `{score}`, `{data}`, `{termo}`, `{tipo}`, `{contexto}`.
+
+7. Limpeza de dados no banco (configuracoes):
+- Chave legada removida da base seed: `processamento_automatico` (sem uso no codigo).
+- Ambiente de desenvolvimento deve usar `migrate:fresh --seed` para iniciar sem esse legado.
+
+8. Melhoria de UX em `/admin/diarios` (escala operacional):
+- Paginacao padrao reduzida e colunas secundarias ocultas por padrao.
+- Busca/filtros/ordenacao persistidos em sessao.
+- Filtros simplificados (menos toggles, mais filtros de periodo/faixa).
+- Abas com ordenacao por contexto (`pendentes`, `erro`, `concluidos`, etc.).
+- Cards de resumo no topo respeitando a visao atual (aba + busca + filtros).
+- Acao de cabecalho para enfileirar diarios filtrados (pendente/erro) com limite configuravel.

@@ -173,13 +173,6 @@ class DiarioResource extends Resource
                     ->limit(30)
                     ->tooltip(function ($record) {
                         return $record->nome_arquivo;
-                    })
-                    ->description(function ($record) {
-                        // Mostrar se há duplicatas baseado no hash
-                        $duplicatas = \App\Models\Diario::where('hash_sha256', $record->hash_sha256)
-                            ->where('id', '!=', $record->id)
-                            ->count();
-                        return $duplicatas > 0 ? "⚠️ {$duplicatas} arquivo(s) similar(es)" : null;
                     }),
                 Tables\Columns\TextColumn::make('estado')
                     ->label('Estado')
@@ -236,12 +229,12 @@ class DiarioResource extends Resource
                     ->label('Usuário')
                     ->searchable()
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('processado_em')
                     ->label('Processado em')
                     ->dateTime('d/m/Y H:i')
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('tentativas')
                     ->label('Tentativas')
                     ->numeric()
@@ -254,56 +247,8 @@ class DiarioResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                // Filtros rápidos de período
-                Filter::make('hoje')
-                    ->label('🗓️ Hoje')
-                    ->query(fn (Builder $query): Builder => $query->whereDate('created_at', today()))
-                    ->toggle(),
-                    
-                Filter::make('esta_semana')
-                    ->label('📅 Esta Semana')
-                    ->query(fn (Builder $query): Builder => $query->whereBetween('created_at', [now()->startOfWeek(), now()->endOfWeek()]))
-                    ->toggle(),
-                    
-                Filter::make('este_mes')
-                    ->label('📆 Este Mês')
-                    ->query(fn (Builder $query): Builder => $query->whereMonth('created_at', now()->month)->whereYear('created_at', now()->year))
-                    ->toggle(),
-                    
-                // Filtros de status com emojis
-                Filter::make('processados')
-                    ->label('✅ Processados')
-                    ->query(fn (Builder $query): Builder => $query->where('status', 'concluido'))
-                    ->toggle(),
-                    
-                Filter::make('com_erro')
-                    ->label('❌ Com Erro')
-                    ->query(fn (Builder $query): Builder => $query->where('status', 'erro'))
-                    ->toggle(),
-                    
-                Filter::make('com_ocorrencias')
-                    ->label('🔍 Com Ocorrências')
-                    ->query(fn (Builder $query): Builder => $query->whereHas('ocorrencias'))
-                    ->toggle(),
-                    
-                Filter::make('sem_ocorrencias')
-                    ->label('🈳 Sem Ocorrências')
-                    ->query(fn (Builder $query): Builder => $query->whereDoesntHave('ocorrencias'))
-                    ->toggle(),
-                    
-                // Filtros de tamanho
-                Filter::make('arquivos_grandes')
-                    ->label('📁 Arquivos Grandes (>10MB)')
-                    ->query(fn (Builder $query): Builder => $query->where('tamanho_arquivo', '>', 10485760))
-                    ->toggle(),
-                    
-                Filter::make('muitas_paginas')
-                    ->label('📄 Muitas Páginas (>200)')
-                    ->query(fn (Builder $query): Builder => $query->where('total_paginas', '>', 200))
-                    ->toggle(),
-                    
                 SelectFilter::make('estado')
-                    ->label('🗺️ Estado')
+                    ->label('Estado')
                     ->options([
                         'AC' => 'Acre', 'AL' => 'Alagoas', 'AP' => 'Amapá',
                         'AM' => 'Amazonas', 'BA' => 'Bahia', 'CE' => 'Ceará',
@@ -320,7 +265,7 @@ class DiarioResource extends Resource
                     ->searchable(),
                     
                 SelectFilter::make('status')
-                    ->label('📊 Status')
+                    ->label('Status')
                     ->options([
                         'pendente' => 'Pendente',
                         'processando' => 'Processando',
@@ -328,13 +273,34 @@ class DiarioResource extends Resource
                         'erro' => 'Erro',
                     ])
                     ->multiple(),
+
+                Filter::make('periodo_upload')
+                    ->label('Período de Upload')
+                    ->form([
+                        Forms\Components\DatePicker::make('created_from')
+                            ->label('De'),
+                        Forms\Components\DatePicker::make('created_until')
+                            ->label('Até'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['created_from'] ?? null,
+                                fn (Builder $query, $date): Builder => $query->whereDate('created_at', '>=', $date),
+                            )
+                            ->when(
+                                $data['created_until'] ?? null,
+                                fn (Builder $query, $date): Builder => $query->whereDate('created_at', '<=', $date),
+                            );
+                    }),
+
                 Filter::make('data_diario')
-                    ->label('📅 Data do Diário')
+                    ->label('Período do Diário')
                     ->form([
                         Forms\Components\DatePicker::make('data_from')
-                            ->label('Data inicial'),
+                            ->label('De'),
                         Forms\Components\DatePicker::make('data_until')
-                            ->label('Data final'),
+                            ->label('Até'),
                     ])
                     ->query(function (Builder $query, array $data): Builder {
                         return $query
@@ -347,16 +313,35 @@ class DiarioResource extends Resource
                                 fn (Builder $query, $date): Builder => $query->whereDate('data_diario', '<=', $date),
                             );
                     }),
+
+                Filter::make('ocorrencias')
+                    ->label('Ocorrências')
+                    ->form([
+                        Forms\Components\Select::make('possui')
+                            ->label('Situação')
+                            ->placeholder('Todos')
+                            ->options([
+                                'sim' => 'Com ocorrências',
+                                'nao' => 'Sem ocorrências',
+                            ]),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return match ($data['possui'] ?? null) {
+                            'sim' => $query->whereHas('ocorrencias'),
+                            'nao' => $query->whereDoesntHave('ocorrencias'),
+                            default => $query,
+                        };
+                    }),
                     
                 Filter::make('filtro_paginas')
-                    ->label('📄 Filtro de Páginas')
+                    ->label('Páginas')
                     ->form([
                         Forms\Components\TextInput::make('min_paginas')
-                            ->label('Páginas mínimas')
+                            ->label('Mínimo')
                             ->numeric()
                             ->placeholder('Ex: 50'),
                         Forms\Components\TextInput::make('max_paginas')
-                            ->label('Páginas máximas')
+                            ->label('Máximo')
                             ->numeric()
                             ->placeholder('Ex: 500'),
                     ])
@@ -373,14 +358,14 @@ class DiarioResource extends Resource
                     }),
                     
                 Filter::make('filtro_tamanho')
-                    ->label('💾 Filtro de Tamanho')
+                    ->label('Tamanho')
                     ->form([
                         Forms\Components\Select::make('faixa_tamanho')
-                            ->label('Faixa de tamanho')
+                            ->label('Faixa')
                             ->options([
-                                'pequeno' => 'Pequenos (< 5MB)',
-                                'medio' => 'Médios (5MB - 10MB)',
-                                'grande' => 'Grandes (> 10MB)',
+                                'pequeno' => 'Até 5 MB',
+                                'medio' => '5 MB a 10 MB',
+                                'grande' => 'Acima de 10 MB',
                             ])
                             ->placeholder('Selecione uma faixa'),
                     ])
@@ -398,6 +383,7 @@ class DiarioResource extends Resource
                         );
                     }),
             ], layout: Tables\Enums\FiltersLayout::AboveContentCollapsible)
+            ->deferFilters()
             ->actions([
                 Tables\Actions\EditAction::make()
                     ->visible(fn ($record) => $record->status === 'pendente'),
@@ -546,6 +532,10 @@ class DiarioResource extends Resource
             ->emptyStateActions([
                 Tables\Actions\CreateAction::make(),
             ])
+            ->deferLoading()
+            ->persistSearchInSession()
+            ->persistFiltersInSession()
+            ->persistSortInSession()
             ->defaultSort('created_at', 'desc');
     }
 

@@ -64,25 +64,15 @@ Sistema web para monitorar empresas em diários oficiais brasileiros, com proces
 - ✅ Ocorrências recentes
 
 ### 7. **Relatórios Avançados**
-- ✅ Relatório de Ocorrências
-  - Filtros por data, empresa, estado, tipo, score
-  - Estatísticas em tempo real
-  - Exportação CSV
-- ✅ Relatório de Diários
-  - Filtros por data, estado, status
-  - Estatísticas de performance
-  - Modal com detalhes
-- ✅ Relatório de Empresas
-  - Filtros por data, criador
-  - Top 10 empresas por ocorrências
-  - Análise de cobertura de contatos
+- ⚠️ Módulo desativado temporariamente no painel para redesign da UX.
+- ⚠️ Rotas e páginas legadas de relatório foram removidas nesta fase de limpeza.
+- ✅ Reentrada planejada com nova tela única de relatórios.
 
-### 8. **Configurações do Sistema**
-- ✅ Configurações gerais (nome, logo, timezone)
-- ✅ Configurações de processamento de PDFs
-- ✅ Configurações de arquivos
-- ✅ Interface limpa e focada
-- ✅ Ações rápidas (limpar cache, otimizar)
+### 8. **Templates de Notificação**
+- ✅ Interface dedicada para templates de Email e WhatsApp
+- ✅ Variáveis suportadas documentadas na tela
+- ✅ Edição centralizada em uma única página
+- ✅ Foco operacional no que realmente é usado
 
 ### 9. **Configurações WhatsApp**
 - ✅ Interface dedicada para configuração
@@ -310,22 +300,19 @@ cp .env.example .env
 # Subir containers
 ./vendor/bin/sail up -d
 
-# Executar migrações
-./vendor/bin/sail artisan migrate
-
-# Executar seeders
-./vendor/bin/sail artisan db:seed
+# Ambiente de desenvolvimento (zera e recria tudo com dados padrão)
+./vendor/bin/sail artisan migrate:fresh --seed
 ```
 
 ### **Usuários Padrão**
 ```
-admin@diario.com / admin123 (Administrador)
+admin@admin.com / admin123 (Administrador)
 manager@diario.com / manager123 (Gerente)
 operator@diario.com / operator123 (Operador)
 ```
 
 ### **Seeds e Dados Iniciais**
-- `php artisan db:seed` (padrão): cria **roles**, **configs** e o **usuário admin**.
+- `php artisan db:seed` (padrão): cria **roles**, **configs** e os usuários **admin/manager/operator**.
 - Seeds fictícias de empresas/diários/ocorrências foram removidas para manter apenas dados reais.
 
 ### **Importação de Empresas via CSV**
