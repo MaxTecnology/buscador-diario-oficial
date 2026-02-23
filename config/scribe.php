@@ -7,6 +7,73 @@ use function Knuckles\Scribe\Config\{removeStrategies, configureStrategy};
 
 // Only the most common configs are shown. See the https://scribe.knuckles.wtf/laravel/reference/config for all.
 
+$scribeInstalled = class_exists(\Knuckles\Scribe\ScribeServiceProvider::class);
+
+$authIn = ($scribeInstalled && enum_exists(AuthIn::class))
+    ? AuthIn::BEARER->value
+    : 'bearer';
+
+$metadataStrategies = [];
+$headersStrategies = [];
+$urlParametersStrategies = [];
+$queryParametersStrategies = [];
+$bodyParametersStrategies = [];
+$responsesStrategies = [];
+$responseFieldsStrategies = [];
+
+if ($scribeInstalled && class_exists(Defaults::class)) {
+    $metadataStrategies = [
+        ...Defaults::METADATA_STRATEGIES,
+    ];
+
+    $headersStrategies = [
+        ...Defaults::HEADERS_STRATEGIES,
+    ];
+
+    if (class_exists(Strategies\StaticData::class)) {
+        $headersStrategies[] = Strategies\StaticData::withSettings(data: [
+            'Content-Type' => 'application/json',
+            'Accept' => 'application/json',
+        ]);
+    }
+
+    $urlParametersStrategies = [
+        ...Defaults::URL_PARAMETERS_STRATEGIES,
+    ];
+
+    $queryParametersStrategies = [
+        ...Defaults::QUERY_PARAMETERS_STRATEGIES,
+    ];
+
+    $bodyParametersStrategies = [
+        ...Defaults::BODY_PARAMETERS_STRATEGIES,
+    ];
+
+    $responsesStrategies = [
+        ...Defaults::RESPONSES_STRATEGIES,
+    ];
+
+    if (
+        class_exists(Strategies\Responses\ResponseCalls::class)
+        && function_exists('Knuckles\\Scribe\\Config\\configureStrategy')
+    ) {
+        $responsesStrategies = configureStrategy(
+            Defaults::RESPONSES_STRATEGIES,
+            Strategies\Responses\ResponseCalls::withSettings(
+                only: ['GET *'],
+                // Recommended: disable debug mode in response calls to avoid error stack traces in responses
+                config: [
+                    'app.debug' => false,
+                ]
+            )
+        );
+    }
+
+    $responseFieldsStrategies = [
+        ...Defaults::RESPONSE_FIELDS_STRATEGIES,
+    ];
+}
+
 return [
     // The HTML <title> for the generated documentation.
     'title' => config('app.name').' API Documentation',
@@ -102,7 +169,7 @@ return [
         'default' => false,
 
         // Where is the auth value meant to be sent in a request?
-        'in' => AuthIn::BEARER->value,
+        'in' => $authIn,
 
         // The name of the auth parameter (e.g. token, key, apiKey) or header (e.g. Authorization, Api-Key).
         'name' => 'key',
@@ -207,36 +274,23 @@ return [
     // Use removeStrategies() to remove an included strategy.
     'strategies' => [
         'metadata' => [
-            ...Defaults::METADATA_STRATEGIES,
+            ...$metadataStrategies,
         ],
         'headers' => [
-            ...Defaults::HEADERS_STRATEGIES,
-            Strategies\StaticData::withSettings(data: [
-                'Content-Type' => 'application/json',
-                'Accept' => 'application/json',
-            ]),
+            ...$headersStrategies,
         ],
         'urlParameters' => [
-            ...Defaults::URL_PARAMETERS_STRATEGIES,
+            ...$urlParametersStrategies,
         ],
         'queryParameters' => [
-            ...Defaults::QUERY_PARAMETERS_STRATEGIES,
+            ...$queryParametersStrategies,
         ],
         'bodyParameters' => [
-            ...Defaults::BODY_PARAMETERS_STRATEGIES,
+            ...$bodyParametersStrategies,
         ],
-        'responses' => configureStrategy(
-            Defaults::RESPONSES_STRATEGIES,
-            Strategies\Responses\ResponseCalls::withSettings(
-                only: ['GET *'],
-                // Recommended: disable debug mode in response calls to avoid error stack traces in responses
-                config: [
-                    'app.debug' => false,
-                ]
-            )
-        ),
+        'responses' => $responsesStrategies,
         'responseFields' => [
-            ...Defaults::RESPONSE_FIELDS_STRATEGIES,
+            ...$responseFieldsStrategies,
         ]
     ],
 
