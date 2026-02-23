@@ -61,6 +61,8 @@ x-app-base: &app-base
     dockerfile: Dockerfile.prod
   restart: unless-stopped
   environment: *app-env
+  networks:
+    - internal
   depends_on:
     - mysql
     - redis
@@ -102,6 +104,8 @@ services:
   mysql:
     image: mysql/mysql-server:8.0
     restart: unless-stopped
+    networks:
+      - internal
     environment:
       MYSQL_DATABASE: ${DB_DATABASE}
       MYSQL_USER: ${DB_USERNAME}
@@ -119,6 +123,8 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    networks:
+      - internal
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis_data:/data
@@ -131,6 +137,8 @@ services:
   minio:
     image: minio/minio:latest
     restart: unless-stopped
+    networks:
+      - internal
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
@@ -149,6 +157,8 @@ services:
   minio-init:
     image: minio/mc:latest
     restart: "no"
+    networks:
+      - internal
     depends_on:
       - minio
     environment:
@@ -170,3 +180,7 @@ volumes:
   redis_data:
   minio_data:
   laravel_storage_data:
+
+networks:
+  internal:
+    driver: bridge
