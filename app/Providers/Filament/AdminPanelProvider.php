@@ -22,11 +22,17 @@ class AdminPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
+        $brandName = env('FILAMENT_BRAND_NAME', config('app.name', 'Diario'));
+        $brandLogoUrl = env('FILAMENT_BRAND_LOGO_URL');
+        $brandLogoPath = trim((string) env('FILAMENT_BRAND_LOGO_PATH', 'storage/systemlogo.png'), '/');
+
         return $panel
             ->default()
             ->id('admin')
             ->path('admin')
             ->login()
+            ->brandName($brandName)
+            ->brandLogo($brandLogoUrl ?: asset($brandLogoPath))
             ->colors([
                 'primary' => Color::Amber,
             ])
