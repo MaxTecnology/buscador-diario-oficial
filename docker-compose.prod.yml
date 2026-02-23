@@ -73,6 +73,9 @@ x-app-base: &app-base
 services:
   app:
     <<: *app-base
+    networks:
+      - internal
+      - dokploy-network
     expose:
       - "80"
     healthcheck:
@@ -106,6 +109,7 @@ services:
     restart: unless-stopped
     networks:
       - internal
+      - dokploy-network
     environment:
       MYSQL_DATABASE: ${DB_DATABASE}
       MYSQL_USER: ${DB_USERNAME}
@@ -125,6 +129,7 @@ services:
     restart: unless-stopped
     networks:
       - internal
+      - dokploy-network
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis_data:/data
@@ -139,6 +144,7 @@ services:
     restart: unless-stopped
     networks:
       - internal
+      - dokploy-network
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
@@ -184,3 +190,5 @@ volumes:
 networks:
   internal:
     driver: bridge
+  dokploy-network:
+    external: true
