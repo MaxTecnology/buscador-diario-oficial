@@ -165,6 +165,7 @@ class DiarioResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->poll('10s')
             ->columns([
                 Tables\Columns\TextColumn::make('nome_arquivo')
                     ->label('Nome do Arquivo')

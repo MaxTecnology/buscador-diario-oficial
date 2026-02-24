@@ -3,7 +3,9 @@
 namespace App\Filament\Resources\DiarioResource\Pages;
 
 use App\Filament\Resources\DiarioResource;
+use App\Models\Diario;
 use App\Models\ActivityLog;
+use Filament\Support\Exceptions\Halt;
 use Filament\Resources\Pages\CreateRecord;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
@@ -42,10 +44,27 @@ class CreateDiario extends CreateRecord
                 $data['hash_sha256'] = $hashSha256;
 
                 // Verificar duplicidade
-                $diarioExistente = \App\Models\Diario::where('hash_sha256', $hashSha256)->first();
+                $diarioExistente = Diario::where('hash_sha256', $hashSha256)->first();
                 if ($diarioExistente) {
                     $disk->delete($path);
-                    throw new \Exception("Este arquivo PDF já foi enviado anteriormente em {$diarioExistente->created_at->format('d/m/Y H:i')}. Diário existente: {$diarioExistente->nome_arquivo}");
+
+                    $mensagem = sprintf(
+                        'Este PDF já foi enviado em %s. Diário existente: %s (status: %s). Procure na lista e use "Processar" para reprocessar, se necessário.',
+                        $diarioExistente->created_at->format('d/m/Y H:i'),
+                        $diarioExistente->nome_arquivo,
+                        $diarioExistente->status
+                    );
+
+                    $this->addError('data.arquivo', $mensagem);
+
+                    Notification::make()
+                        ->title('PDF duplicado')
+                        ->body($mensagem)
+                        ->warning()
+                        ->persistent()
+                        ->send();
+
+                    throw new Halt();
                 }
             }
 

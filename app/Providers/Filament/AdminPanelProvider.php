@@ -33,6 +33,8 @@ class AdminPanelProvider extends PanelProvider
             ->login(AdminLogin::class)
             ->brandName($brandName)
             ->brandLogo($brandLogo)
+            ->databaseNotifications()
+            ->databaseNotificationsPolling('10s')
             ->colors([
                 'primary' => Color::Amber,
             ])

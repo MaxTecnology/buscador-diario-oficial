@@ -3,12 +3,15 @@
 namespace App\Jobs;
 
 use App\Models\Diario;
+use App\Models\User;
 use App\Services\PdfProcessorService;
+use Filament\Notifications\Notification as FilamentNotification;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class ProcessarPdfJob implements ShouldQueue
 {
@@ -45,8 +48,18 @@ class ProcessarPdfJob implements ShouldQueue
             
             if ($resultado['sucesso']) {
                 Log::info("PDF processado com sucesso: {$this->diario->nome_arquivo}. Ocorrências: {$resultado['ocorrencias_encontradas']}");
+                $this->enviarNotificacaoPainel(
+                    tipo: 'success',
+                    titulo: 'Diário processado',
+                    corpo: "{$this->diario->nome_arquivo} concluído. Ocorrências: {$resultado['ocorrencias_encontradas']}."
+                );
             } else {
                 Log::error("Erro no processamento do PDF: {$this->diario->nome_arquivo}. Erro: {$resultado['erro']}");
+                $this->enviarNotificacaoPainel(
+                    tipo: 'danger',
+                    titulo: 'Erro no processamento do diário',
+                    corpo: "{$this->diario->nome_arquivo}: {$resultado['erro']}"
+                );
             }
             
         } catch (\Throwable $e) {
@@ -77,5 +90,58 @@ class ProcessarPdfJob implements ShouldQueue
             'erro_mensagem' => 'Falha no processamento: ' . $exception->getMessage(),
             'erro_processamento' => $exception->getMessage(),
         ]);
+
+        $this->enviarNotificacaoPainel(
+            tipo: 'danger',
+            titulo: 'Falha definitiva no processamento',
+            corpo: "{$this->diario->nome_arquivo}: {$exception->getMessage()}"
+        );
+    }
+
+    private function enviarNotificacaoPainel(string $tipo, string $titulo, string $corpo): void
+    {
+        try {
+            if (! Schema::hasTable('notifications')) {
+                return;
+            }
+
+            $diario = $this->diario->fresh(['usuario']);
+            $usuarioUpload = $diario?->usuario;
+
+            $recipients = User::query()
+                ->where('pode_fazer_login', true)
+                ->role('admin')
+                ->get();
+
+            if ($usuarioUpload && $usuarioUpload->pode_fazer_login) {
+                $recipients->prepend($usuarioUpload);
+            }
+
+            $recipients = $recipients
+                ->unique('id')
+                ->values();
+
+            if ($recipients->isEmpty()) {
+                return;
+            }
+
+            $notification = FilamentNotification::make()
+                ->title($titulo)
+                ->body($corpo);
+
+            match ($tipo) {
+                'success' => $notification->success(),
+                'danger' => $notification->danger(),
+                'warning' => $notification->warning(),
+                default => $notification->info(),
+            };
+
+            $notification->sendToDatabase($recipients, true);
+        } catch (\Throwable $e) {
+            Log::warning('Não foi possível enviar notificação do painel após processamento.', [
+                'diario_id' => $this->diario->id ?? null,
+                'erro' => $e->getMessage(),
+            ]);
+        }
     }
 }
