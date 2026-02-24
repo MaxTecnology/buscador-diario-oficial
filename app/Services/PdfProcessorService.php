@@ -29,8 +29,11 @@ class PdfProcessorService
         
         try {
             // Aumentar limite de tempo e memória para PDFs grandes
-            set_time_limit(300); // 5 minutos
-            ini_set('memory_limit', '512M');
+            $maxExecutionTime = max(60, (int) env('PDF_PROCESS_MAX_EXECUTION_TIME', 900));
+            $memoryLimit = (string) env('PDF_PROCESS_MEMORY_LIMIT', '1024M');
+
+            set_time_limit($maxExecutionTime);
+            @ini_set('memory_limit', $memoryLimit);
             
             $this->loggingService->logProcessamentoPdf(
                 LoggingService::NIVEL_INFO,
@@ -39,6 +42,8 @@ class PdfProcessorService
                     'diario_id' => $diario->id,
                     'nome_arquivo' => $diario->nome_arquivo,
                     'tamanho_arquivo' => $diario->tamanho_arquivo,
+                    'memory_limit' => ini_get('memory_limit'),
+                    'max_execution_time' => ini_get('max_execution_time'),
                 ]
             );
             
@@ -89,8 +94,16 @@ class PdfProcessorService
             
             // Salvar texto completo em arquivo separado para melhor performance
             $disk = $this->getDiariosDisk();
-            $nomeArquivoTexto = 'texto_' . $diario->id . '_' . time() . '.txt';
-            $caminhoTextoCompleto = 'diarios/textos/' . $nomeArquivoTexto;
+            $caminhoPdfStorage = (string) ($diario->caminho_arquivo ?? '');
+            $diretorioPdf = trim((string) pathinfo($caminhoPdfStorage, PATHINFO_DIRNAME), '.');
+            $nomeBasePdf = (string) pathinfo($caminhoPdfStorage, PATHINFO_FILENAME);
+
+            if ($nomeBasePdf === '') {
+                $nomeBasePdf = 'diario_' . $diario->id;
+            }
+
+            $nomeArquivoTexto = $nomeBasePdf . '_texto.txt';
+            $caminhoTextoCompleto = ($diretorioPdf !== '' ? $diretorioPdf . '/' : '') . $nomeArquivoTexto;
             $disk->put($caminhoTextoCompleto, $textoCompleto);
             
             // Para o banco, salvar apenas um preview
@@ -141,32 +154,42 @@ class PdfProcessorService
                 'ocorrencias' => $ocorrenciasEncontradas
             ];
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+            $mensagemErro = $e->getMessage();
+            if (str_contains($mensagemErro, 'Allowed memory size')) {
+                $mensagemErro = 'PDF muito grande/complexo para o limite atual de memória do processador.';
+            }
+
             Log::error("Erro ao processar PDF: " . $e->getMessage(), [
                 'diario_id' => $diario->id,
-                'arquivo' => $diario->caminho_arquivo
+                'arquivo' => $diario->caminho_arquivo,
+                'tipo_erro' => get_class($e),
             ]);
 
             $errorData = [
                 'status' => 'erro',
-                'erro_mensagem' => $e->getMessage()
+                'erro_mensagem' => $mensagemErro,
             ];
             
             // Verificar se as colunas novas existem
             if (\Illuminate\Support\Facades\Schema::hasColumn('diarios', 'status_processamento')) {
                 $errorData['status_processamento'] = 'erro';
-                $errorData['erro_processamento'] = $e->getMessage();
+                $errorData['erro_processamento'] = $mensagemErro;
             }
             
             $diario->update($errorData);
 
             return [
                 'sucesso' => false,
-                'erro' => $e->getMessage()
+                'erro' => $mensagemErro,
             ];
         } finally {
             if (isset($tmpFile) && $tmpFile && file_exists($tmpFile)) {
                 @unlink($tmpFile);
+            }
+
+            if (function_exists('gc_collect_cycles')) {
+                gc_collect_cycles();
             }
         }
     }

@@ -3,13 +3,12 @@
 namespace App\Filament\Resources\DiarioResource\Pages;
 
 use App\Filament\Resources\DiarioResource;
-use App\Services\PdfProcessorService;
 use App\Models\ActivityLog;
-use Filament\Actions;
 use Filament\Resources\Pages\CreateRecord;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class CreateDiario extends CreateRecord
 {
@@ -56,6 +55,54 @@ class CreateDiario extends CreateRecord
             }
             if (!str_ends_with(strtolower($data['nome_arquivo']), '.pdf')) {
                 $data['nome_arquivo'] .= '.pdf';
+            }
+
+            // Organizar caminho do arquivo no bucket por estado e data do diário.
+            $estado = strtoupper((string) ($data['estado'] ?? 'NA'));
+            $dataDiario = !empty($data['data_diario'])
+                ? \Illuminate\Support\Carbon::parse($data['data_diario'])
+                : now();
+
+            $nomeBase = pathinfo($data['nome_arquivo'], PATHINFO_FILENAME);
+            $nomeSeguro = Str::slug($nomeBase);
+            if ($nomeSeguro === '') {
+                $nomeSeguro = 'diario-oficial';
+            }
+
+            $hashCurto = substr((string) ($data['hash_sha256'] ?? Str::uuid()), 0, 8);
+            $nomeFinal = sprintf(
+                '%s_%s_%s_%s.pdf',
+                $estado,
+                $dataDiario->format('Ymd'),
+                $nomeSeguro,
+                $hashCurto
+            );
+
+            $caminhoFinal = sprintf(
+                'diarios/%s/%s/%s',
+                $estado,
+                $dataDiario->format('Y/m/d'),
+                $nomeFinal
+            );
+
+            if ($path !== $caminhoFinal) {
+                if ($disk->exists($caminhoFinal)) {
+                    $caminhoFinal = sprintf(
+                        'diarios/%s/%s/%s_%s.pdf',
+                        $estado,
+                        $dataDiario->format('Y/m/d'),
+                        $estado . '_' . $dataDiario->format('Ymd') . '_' . $nomeSeguro,
+                        Str::uuid()
+                    );
+                }
+
+                $movido = $disk->move($path, $caminhoFinal);
+
+                if (!$movido) {
+                    throw new \RuntimeException('Não foi possível organizar o arquivo no storage.');
+                }
+
+                $data['caminho_arquivo'] = $caminhoFinal;
             }
         } else {
             $data['hash_sha256'] = hash('sha256', ($data['nome_arquivo'] ?? '') . time());

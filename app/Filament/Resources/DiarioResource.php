@@ -43,7 +43,7 @@ class DiarioResource extends Resource
                             ->directory('diarios')
                             ->disk(config('filesystems.diarios_disk', 'diarios'))
                             ->acceptedFileTypes(['application/pdf'])
-                            ->maxSize(50 * 1024) // 50MB
+                            ->maxSize(100 * 1024) // 100MB
                             ->required()
                             ->columnSpanFull()
                             ->helperText('Selecione um arquivo PDF do diário oficial')
@@ -404,42 +404,13 @@ class DiarioResource extends Resource
                             'erro_processamento' => null,
                         ]);
 
-                        $processamentoAssincrono = \App\Models\ConfiguracaoSistema::get('processamento_assincrono', true);
+                        \App\Jobs\ProcessarPdfJob::dispatch($record);
 
-                        if ($processamentoAssincrono) {
-                            \App\Jobs\ProcessarPdfJob::dispatch($record);
-                            \Filament\Notifications\Notification::make()
-                                ->title('Processamento enfileirado')
-                                ->body('O diário foi enviado para a fila. Você será notificado ao concluir.')
-                                ->success()
-                                ->send();
-                        } else {
-                            try {
-                                $processorService = new \App\Services\PdfProcessorService();
-                                $resultado = $processorService->processarPdf($record);
-
-                                if ($resultado['sucesso']) {
-                                    \Filament\Notifications\Notification::make()
-                                        ->title('PDF Processado!')
-                                        ->body("Ocorrências encontradas: {$resultado['ocorrencias_encontradas']}")
-                                        ->success()
-                                        ->send();
-                                } else {
-                                    \Filament\Notifications\Notification::make()
-                                        ->title('Erro no Processamento')
-                                        ->body($resultado['erro'])
-                                        ->danger()
-                                        ->send();
-                                }
-                            } catch (\Throwable $e) {
-                                \App\Jobs\ProcessarPdfJob::dispatch($record);
-                                \Filament\Notifications\Notification::make()
-                                    ->title('Enviado para fila')
-                                    ->body('Processamento síncrono falhou; o diário foi enviado para a fila.')
-                                    ->warning()
-                                    ->send();
-                            }
-                        }
+                        \Filament\Notifications\Notification::make()
+                            ->title('Processamento enfileirado')
+                            ->body('O diário foi enviado para a fila. Atualize a lista para acompanhar o status.')
+                            ->success()
+                            ->send();
                     }),
                 Tables\Actions\Action::make('download_pdf')
                     ->label('Download PDF')
@@ -495,9 +466,7 @@ class DiarioResource extends Resource
                         ->color('success')
                         ->requiresConfirmation()
                         ->action(function ($records) {
-                            $processamentoAssincrono = \App\Models\ConfiguracaoSistema::get('processamento_assincrono', true);
-                            
-                            $records->each(function ($record) use ($processamentoAssincrono) {
+                            $records->each(function ($record) {
                                 if (!in_array($record->status, ['pendente', 'erro'])) {
                                     return;
                                 }
@@ -509,16 +478,7 @@ class DiarioResource extends Resource
                                     'erro_processamento' => null,
                                 ]);
 
-                                if ($processamentoAssincrono) {
-                                    \App\Jobs\ProcessarPdfJob::dispatch($record);
-                                } else {
-                                    try {
-                                        $processorService = new \App\Services\PdfProcessorService();
-                                        $processorService->processarPdf($record);
-                                    } catch (\Throwable $e) {
-                                        \App\Jobs\ProcessarPdfJob::dispatch($record);
-                                    }
-                                }
+                                \App\Jobs\ProcessarPdfJob::dispatch($record);
                             });
 
                             \Filament\Notifications\Notification::make()

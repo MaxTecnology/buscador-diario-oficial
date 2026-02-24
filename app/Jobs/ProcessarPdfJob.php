@@ -49,10 +49,11 @@ class ProcessarPdfJob implements ShouldQueue
                 Log::error("Erro no processamento do PDF: {$this->diario->nome_arquivo}. Erro: {$resultado['erro']}");
             }
             
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error("Falha no job de processamento de PDF: " . $e->getMessage(), [
                 'diario_id' => $this->diario->id,
-                'arquivo' => $this->diario->nome_arquivo
+                'arquivo' => $this->diario->nome_arquivo,
+                'tipo_erro' => get_class($e),
             ]);
             
             throw $e;
@@ -72,7 +73,9 @@ class ProcessarPdfJob implements ShouldQueue
         
         $this->diario->update([
             'status' => 'erro',
-            'erro_mensagem' => 'Falha no processamento: ' . $exception->getMessage()
+            'status_processamento' => 'erro',
+            'erro_mensagem' => 'Falha no processamento: ' . $exception->getMessage(),
+            'erro_processamento' => $exception->getMessage(),
         ]);
     }
 }

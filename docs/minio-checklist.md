@@ -51,12 +51,43 @@ Usar MinIO (S3 compatível) no Docker para armazenar PDFs e textos extraídos de
 
 ## Produção (MinIO separado / Dockploy)
 - [ ] Subir MinIO em projeto/stack separado do Laravel (recomendado).
+- [ ] Usar o mesmo MinIO externo também no desenvolvimento (via `.env`) para validar compatibilidade com produção.
 - [ ] Expor somente API S3 (`9000`) com HTTPS (ex.: `s3.seudominio.com`).
 - [ ] Manter bucket `diarios` privado (sem acesso anônimo).
 - [ ] Criar credencial dedicada para Laravel (não usar root).
 - [ ] Criar credencial dedicada para `n8n` (reuso controlado).
 - [ ] Configurar Laravel com `DIARIOS_ENDPOINT` apontando para o host público/privado do MinIO externo.
 - [ ] Validar upload no app + leitura/gravação no `n8n`.
+
+### CORS (validar cedo em dev)
+Se você vai usar o mesmo MinIO no desenvolvimento e produção, configure CORS no bucket `diarios` para evitar surpresa ao embutir/baixar arquivos pelo navegador.
+
+Exemplo de CORS (ajuste origins):
+
+```json
+[
+  {
+    "AllowedHeaders": ["*"],
+    "AllowedMethods": ["GET", "PUT", "POST", "HEAD"],
+    "AllowedOrigins": [
+      "http://localhost",
+      "http://localhost:80",
+      "http://localhost:5173",
+      "https://diario.g2asolucoescontabeis.com.br"
+    ],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3000
+  }
+]
+```
+
+Aplicar com `mc` (exemplo):
+
+```bash
+mc anonymous set none prod/diarios
+mc cors set prod/diarios cors.json
+mc cors info prod/diarios
+```
 
 
 
