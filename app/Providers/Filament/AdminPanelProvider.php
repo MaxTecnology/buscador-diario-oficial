@@ -23,8 +23,7 @@ class AdminPanelProvider extends PanelProvider
     public function panel(Panel $panel): Panel
     {
         $brandName = env('FILAMENT_BRAND_NAME', config('app.name', 'Diario'));
-        $brandLogoUrl = env('FILAMENT_BRAND_LOGO_URL');
-        $brandLogoPath = trim((string) env('FILAMENT_BRAND_LOGO_PATH', 'storage/systemlogo.png'), '/');
+        $brandLogo = $this->resolveBrandLogo();
 
         return $panel
             ->default()
@@ -32,7 +31,7 @@ class AdminPanelProvider extends PanelProvider
             ->path('admin')
             ->login()
             ->brandName($brandName)
-            ->brandLogo($brandLogoUrl ?: asset($brandLogoPath))
+            ->brandLogo($brandLogo)
             ->colors([
                 'primary' => Color::Amber,
             ])
@@ -60,5 +59,56 @@ class AdminPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
             ]);
+    }
+
+    private function resolveBrandLogo(): string
+    {
+        $brandLogoUrl = trim((string) env('FILAMENT_BRAND_LOGO_URL', ''));
+
+        if ($brandLogoUrl !== '') {
+            return $brandLogoUrl;
+        }
+
+        $brandLogoFile = trim((string) env('FILAMENT_BRAND_LOGO_FILE', 'resources/branding/logo.png'));
+        $inlineBrandLogo = $this->inlineImageFromFile($brandLogoFile);
+
+        if ($inlineBrandLogo !== null) {
+            return $inlineBrandLogo;
+        }
+
+        // Fallback for legacy/public-path setups.
+        $brandLogoPath = trim((string) env('FILAMENT_BRAND_LOGO_PATH', 'storage/systemlogo.png'), '/');
+
+        return asset($brandLogoPath);
+    }
+
+    private function inlineImageFromFile(string $relativePath): ?string
+    {
+        $absolutePath = base_path(ltrim($relativePath, '/'));
+
+        if (!is_file($absolutePath) || !is_readable($absolutePath)) {
+            return null;
+        }
+
+        $extension = strtolower((string) pathinfo($absolutePath, PATHINFO_EXTENSION));
+        $mimeType = match ($extension) {
+            'png' => 'image/png',
+            'jpg', 'jpeg' => 'image/jpeg',
+            'svg' => 'image/svg+xml',
+            'webp' => 'image/webp',
+            default => null,
+        };
+
+        if ($mimeType === null) {
+            return null;
+        }
+
+        $contents = file_get_contents($absolutePath);
+
+        if ($contents === false) {
+            return null;
+        }
+
+        return 'data:' . $mimeType . ';base64,' . base64_encode($contents);
     }
 }
