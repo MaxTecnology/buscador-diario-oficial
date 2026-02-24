@@ -49,6 +49,15 @@ Usar MinIO (S3 compatível) no Docker para armazenar PDFs e textos extraídos de
 - [x] Atualizar `docs/DOCUMENTACAO.md` com instruções de ambiente/variáveis.
 - [ ] Comunicar mudança de storage (limpeza do storage antigo se necessário).
 
+## Produção (MinIO separado / Dockploy)
+- [ ] Subir MinIO em projeto/stack separado do Laravel (recomendado).
+- [ ] Expor somente API S3 (`9000`) com HTTPS (ex.: `s3.seudominio.com`).
+- [ ] Manter bucket `diarios` privado (sem acesso anônimo).
+- [ ] Criar credencial dedicada para Laravel (não usar root).
+- [ ] Criar credencial dedicada para `n8n` (reuso controlado).
+- [ ] Configurar Laravel com `DIARIOS_ENDPOINT` apontando para o host público/privado do MinIO externo.
+- [ ] Validar upload no app + leitura/gravação no `n8n`.
+
 
 
 ### Tornar o bucket diarios privado (revogar acesso anônimo):
