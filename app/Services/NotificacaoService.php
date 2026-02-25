@@ -27,6 +27,16 @@ class NotificacaoService
         ];
 
         try {
+            if (! $this->deveNotificarOcorrencia($ocorrencia)) {
+                Log::info('Notificação de ocorrência ignorada por regra de IE.', [
+                    'ocorrencia_id' => $ocorrencia->id,
+                    'tipo_match' => $ocorrencia->tipo_match,
+                    'termo_encontrado' => $ocorrencia->termo_encontrado,
+                ]);
+
+                return $resultados;
+            }
+
             // Verificar se deve enviar notificações
             $emailAtivo = ConfiguracaoSistema::get('notificacoes_email_ativo', true);
             $whatsappAtivo = ConfiguracaoSistema::get('notificacoes_whatsapp_ativo', true);
@@ -131,6 +141,26 @@ class NotificacaoService
         }
 
         return $resultados;
+    }
+
+    protected function deveNotificarOcorrencia(Ocorrencia $ocorrencia): bool
+    {
+        if ($ocorrencia->tipo_match !== 'inscricao_estadual') {
+            return true;
+        }
+
+        $digitos = preg_replace('/\D+/', '', (string) $ocorrencia->termo_encontrado) ?? '';
+        $ieEmpresa = preg_replace('/\D+/', '', (string) ($ocorrencia->empresa->inscricao_estadual ?? '')) ?? '';
+
+        if (strlen($ieEmpresa) < 8) {
+            return false;
+        }
+
+        $ieBase = substr($ieEmpresa, 0, 8);
+
+        // Regra de negócio: para match por IE, notificar apenas quando o termo encontrado
+        // for o corpo da inscrição (8 dígitos), ignorando o dígito verificador.
+        return strlen($digitos) === 8 && $digitos === $ieBase;
     }
 
     protected function enviarEmail(Ocorrencia $ocorrencia, $usuario): bool

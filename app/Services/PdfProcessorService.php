@@ -25,7 +25,7 @@ class PdfProcessorService
         $this->loggingService = new LoggingService();
     }
 
-    public function processarPdf(Diario $diario): array
+    public function processarPdf(Diario $diario, array $contexto = []): array
     {
         $startTime = microtime(true);
         
@@ -137,10 +137,14 @@ class PdfProcessorService
             $diario->update($updateData);
 
             // Usar o texto completo para buscar ocorrências (não o preview)
-            $ocorrenciasEncontradas = $this->buscarOcorrencias($diario, $textoCompleto, $textoNormalizado, $mapaPaginas);
+            $ocorrenciasEncontradas = $this->buscarOcorrencias($diario, $textoCompleto, $textoNormalizado, $mapaPaginas, $contexto);
 
             // Enviar notificações automáticas se configurado
-            if (\App\Models\ConfiguracaoSistema::get('notificacao_automatica_apos_processamento', true)) {
+            $enviarNotificacoes = array_key_exists('enviar_notificacoes', $contexto)
+                ? (bool) $contexto['enviar_notificacoes']
+                : \App\Models\ConfiguracaoSistema::get('notificacao_automatica_apos_processamento', true);
+
+            if ($enviarNotificacoes) {
                 $notificacaoService = app(\App\Services\NotificacaoService::class);
                 foreach ($ocorrenciasEncontradas as $ocorrencia) {
                     if ($ocorrencia->confiabilidade === 'alta') {
@@ -196,9 +200,13 @@ class PdfProcessorService
         }
     }
 
-    protected function buscarOcorrencias(Diario $diario, string $textoOriginal, string $textoNormalizado, array $mapaPaginas): array
+    protected function buscarOcorrencias(Diario $diario, string $textoOriginal, string $textoNormalizado, array $mapaPaginas, array $contexto = []): array
     {
         $ocorrenciasEncontradas = [];
+        $processamentoId = $contexto['diario_processamento_id'] ?? null;
+        $ocorrenciasAtivas = (bool) ($contexto['ocorrencias_ativas'] ?? true);
+        $temColunaProcessamento = \Illuminate\Support\Facades\Schema::hasColumn('ocorrencias', 'diario_processamento_id');
+        $temColunaAtivo = \Illuminate\Support\Facades\Schema::hasColumn('ocorrencias', 'ativo');
         
         // Buscar apenas empresas ativas
         $empresas = Empresa::where('ativo', true)->get();
@@ -216,15 +224,16 @@ class PdfProcessorService
                 
                 Log::info("Empresa {$empresa->nome}: Detectada com {$melhorMatch['tipo']} - Score: {$melhorMatch['score']}");
                 
-                // Limpar dados antes de salvar
-                $termoLimpo = mb_substr($melhorMatch['termo'], 0, 255);
+                // Limpar/normalizar dados antes de salvar
+                $termoPersistido = $this->normalizarTermoEncontradoParaPersistencia($empresa, $melhorMatch);
+                $termoLimpo = mb_substr($termoPersistido, 0, 255);
                 $contextoLimpo = mb_substr($melhorMatch['contexto'], 0, 1000);
                 $score = $melhorMatch['score'];
                 $scoreMinimo = $empresa->score_minimo ?? 0.85;
                 $confiabilidade = $score >= $scoreMinimo ? 'alta' : 'suspeito';
                 $statusRevisao = 'pendente';
 
-                $ocorrencia = Ocorrencia::create([
+                $dadosOcorrencia = [
                     'diario_id' => $diario->id,
                     'empresa_id' => $empresa->id,
                     'cnpj' => $empresa->cnpj,
@@ -237,7 +246,17 @@ class PdfProcessorService
                     'posicao_fim' => $melhorMatch['posicao'] + strlen($melhorMatch['termo']),
                     'pagina' => $melhorMatch['pagina'] ?? null,
                     'tipo_match' => $melhorMatch['tipo'],
-                ]);
+                ];
+
+                if ($temColunaProcessamento) {
+                    $dadosOcorrencia['diario_processamento_id'] = $processamentoId;
+                }
+
+                if ($temColunaAtivo) {
+                    $dadosOcorrencia['ativo'] = $ocorrenciasAtivas;
+                }
+
+                $ocorrencia = Ocorrencia::create($dadosOcorrencia);
 
                 $ocorrenciasEncontradas[] = $ocorrencia;
                 
@@ -286,6 +305,17 @@ class PdfProcessorService
             return false;
         }
 
+        if ($tipo === 'inscricao_estadual' && ! $this->matchInscricaoEstadualValido($empresa, $termo)) {
+            Log::info('Match descartado por regra de inscrição estadual (corpo de 8 dígitos).', [
+                'empresa' => $empresa->nome,
+                'termo' => $termo,
+                'ie_empresa' => $empresa->inscricao_estadual,
+                'score' => $score,
+            ]);
+
+            return false;
+        }
+
         return true;
     }
 
@@ -306,6 +336,46 @@ class PdfProcessorService
         $limpo = preg_replace('/[^[:alnum:]]/u', '', $termo) ?? '';
 
         return mb_strlen($limpo);
+    }
+
+    protected function matchInscricaoEstadualValido(Empresa $empresa, string $termoEncontrado): bool
+    {
+        $ieBase = $this->extrairCorpoInscricaoEstadual($empresa->inscricao_estadual);
+
+        if ($ieBase === null) {
+            return false;
+        }
+
+        $digitosTermo = preg_replace('/\D+/', '', $termoEncontrado) ?? '';
+
+        if (strlen($digitosTermo) < 8) {
+            return false;
+        }
+
+        return substr($digitosTermo, 0, 8) === $ieBase;
+    }
+
+    protected function normalizarTermoEncontradoParaPersistencia(Empresa $empresa, array $match): string
+    {
+        $termo = (string) ($match['termo'] ?? '');
+        $tipo = (string) ($match['tipo'] ?? '');
+
+        if ($tipo !== 'inscricao_estadual') {
+            return $termo;
+        }
+
+        return $this->extrairCorpoInscricaoEstadual($empresa->inscricao_estadual) ?? $termo;
+    }
+
+    protected function extrairCorpoInscricaoEstadual(?string $inscricao): ?string
+    {
+        $digitos = preg_replace('/\D+/', '', (string) $inscricao) ?? '';
+
+        if (strlen($digitos) < 8) {
+            return null;
+        }
+
+        return substr($digitos, 0, 8);
     }
 
     protected function buscarTermosEmpresa(Empresa $empresa, string $textoLower, string $textoOriginal): array

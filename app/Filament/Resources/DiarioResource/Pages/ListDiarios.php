@@ -12,6 +12,7 @@ use Filament\Pages\Concerns\ExposesTableToWidgets;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Resources\Components\Tab;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 
 class ListDiarios extends ListRecords
 {
@@ -76,7 +77,14 @@ class ListDiarios extends ListRecords
                             'erro_processamento' => null,
                         ]);
 
-                        ProcessarPdfJob::dispatch($record);
+                        ProcessarPdfJob::dispatch($record, [
+                            'tipo' => 'inicial',
+                            'modo' => 'completo',
+                            'motivo' => 'Enfileirado pela ação "Filtrados"',
+                            'notificar' => true,
+                            'limpar_ocorrencias_anteriores' => true,
+                            'iniciado_por_user_id' => Auth::id(),
+                        ]);
                         $enfileirados++;
                     }
 

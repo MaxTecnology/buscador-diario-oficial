@@ -405,11 +405,64 @@ class DiarioResource extends Resource
                             'erro_processamento' => null,
                         ]);
 
-                        \App\Jobs\ProcessarPdfJob::dispatch($record);
+                        \App\Jobs\ProcessarPdfJob::dispatch($record, [
+                            'tipo' => 'inicial',
+                            'modo' => 'completo',
+                            'motivo' => 'Processamento manual pelo painel',
+                            'notificar' => true,
+                            'limpar_ocorrencias_anteriores' => true,
+                            'iniciado_por_user_id' => Auth::id(),
+                        ]);
 
                         \Filament\Notifications\Notification::make()
                             ->title('Processamento enfileirado')
                             ->body('O diário foi enviado para a fila. Atualize a lista para acompanhar o status.')
+                            ->success()
+                            ->send();
+                    }),
+                Tables\Actions\Action::make('reprocessar')
+                    ->label('Reprocessar')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('warning')
+                    ->visible(fn ($record) => $record->status === 'concluido')
+                    ->form([
+                        Forms\Components\Textarea::make('motivo')
+                            ->label('Motivo do reprocessamento')
+                            ->required()
+                            ->rows(2)
+                            ->maxLength(255)
+                            ->placeholder('Ex.: Empresa nova cadastrada / ajuste de regra de matching'),
+                        Forms\Components\Toggle::make('notificar')
+                            ->label('Enviar notificações se encontrar novas ocorrências')
+                            ->default(false),
+                        Forms\Components\Toggle::make('limpar_ocorrencias_anteriores')
+                            ->label('Substituir ocorrências atuais por esta nova execução')
+                            ->helperText('Mantém histórico no banco e exibe apenas as ocorrências da execução mais recente.')
+                            ->default(true),
+                    ])
+                    ->requiresConfirmation()
+                    ->modalHeading('Reprocessar diário')
+                    ->modalDescription('Recomendado após cadastro de novas empresas ou ajuste de regras. O histórico da execução anterior será preservado.')
+                    ->action(function ($record, array $data) {
+                        $record->update([
+                            'status' => 'processando',
+                            'status_processamento' => 'processando',
+                            'erro_mensagem' => null,
+                            'erro_processamento' => null,
+                        ]);
+
+                        \App\Jobs\ProcessarPdfJob::dispatch($record, [
+                            'tipo' => 'reprocessamento',
+                            'modo' => 'completo',
+                            'motivo' => trim((string) ($data['motivo'] ?? 'Reprocessamento manual pelo painel')),
+                            'notificar' => (bool) ($data['notificar'] ?? false),
+                            'limpar_ocorrencias_anteriores' => (bool) ($data['limpar_ocorrencias_anteriores'] ?? true),
+                            'iniciado_por_user_id' => Auth::id(),
+                        ]);
+
+                        \Filament\Notifications\Notification::make()
+                            ->title('Reprocessamento enfileirado')
+                            ->body('O diário foi enviado para reprocessamento. O histórico da execução será preservado.')
                             ->success()
                             ->send();
                     }),
@@ -461,7 +514,7 @@ class DiarioResource extends Resource
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
                         ->requiresConfirmation(),
-                    Tables\Actions\BulkAction::make('reprocessar')
+                    Tables\Actions\BulkAction::make('processarSelecionados')
                         ->label('Processar Selecionados')
                         ->icon('heroicon-o-arrow-path')
                         ->color('success')
@@ -479,7 +532,14 @@ class DiarioResource extends Resource
                                     'erro_processamento' => null,
                                 ]);
 
-                                \App\Jobs\ProcessarPdfJob::dispatch($record);
+                                \App\Jobs\ProcessarPdfJob::dispatch($record, [
+                                    'tipo' => 'inicial',
+                                    'modo' => 'completo',
+                                    'motivo' => 'Processamento em lote pelo painel',
+                                    'notificar' => true,
+                                    'limpar_ocorrencias_anteriores' => true,
+                                    'iniciado_por_user_id' => Auth::id(),
+                                ]);
                             });
 
                             \Filament\Notifications\Notification::make()
@@ -487,6 +547,68 @@ class DiarioResource extends Resource
                                 ->body('Os diários selecionados foram enviados para processamento.')
                                 ->success()
                                 ->send();
+                        }),
+                    Tables\Actions\BulkAction::make('reprocessarSelecionados')
+                        ->label('Reprocessar Selecionados')
+                        ->icon('heroicon-o-arrow-path')
+                        ->color('warning')
+                        ->form([
+                            Forms\Components\Textarea::make('motivo')
+                                ->label('Motivo do reprocessamento')
+                                ->required()
+                                ->rows(2)
+                                ->maxLength(255)
+                                ->placeholder('Ex.: Empresa nova cadastrada / ajuste de regras'),
+                            Forms\Components\Toggle::make('notificar')
+                                ->label('Enviar notificações')
+                                ->default(false),
+                            Forms\Components\Toggle::make('limpar_ocorrencias_anteriores')
+                                ->label('Substituir ocorrências atuais')
+                                ->default(true),
+                        ])
+                        ->requiresConfirmation()
+                        ->modalHeading('Reprocessar diários selecionados')
+                        ->modalDescription('Somente diários concluídos serão reenfileirados nesta ação.')
+                        ->action(function ($records, array $data) {
+                            $enfileirados = 0;
+
+                            $records->each(function ($record) use ($data, &$enfileirados) {
+                                if ($record->status !== 'concluido') {
+                                    return;
+                                }
+
+                                $record->update([
+                                    'status' => 'processando',
+                                    'status_processamento' => 'processando',
+                                    'erro_mensagem' => null,
+                                    'erro_processamento' => null,
+                                ]);
+
+                                \App\Jobs\ProcessarPdfJob::dispatch($record, [
+                                    'tipo' => 'reprocessamento',
+                                    'modo' => 'completo',
+                                    'motivo' => trim((string) ($data['motivo'] ?? 'Reprocessamento em lote pelo painel')),
+                                    'notificar' => (bool) ($data['notificar'] ?? false),
+                                    'limpar_ocorrencias_anteriores' => (bool) ($data['limpar_ocorrencias_anteriores'] ?? true),
+                                    'iniciado_por_user_id' => Auth::id(),
+                                ]);
+
+                                $enfileirados++;
+                            });
+
+                            $notification = \Filament\Notifications\Notification::make()
+                                ->title('Reprocessamento em lote enfileirado')
+                                ->body($enfileirados > 0
+                                    ? "{$enfileirados} diário(s) concluído(s) enviado(s) para reprocessamento."
+                                    : 'Nenhum diário concluído foi selecionado.');
+
+                            if ($enfileirados > 0) {
+                                $notification->success();
+                            } else {
+                                $notification->warning();
+                            }
+
+                            $notification->send();
                         }),
                 ]),
             ])

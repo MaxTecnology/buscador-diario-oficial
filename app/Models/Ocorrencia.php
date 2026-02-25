@@ -14,6 +14,8 @@ class Ocorrencia extends Model
 
     protected $fillable = [
         'diario_id',
+        'diario_processamento_id',
+        'ativo',
         'empresa_id',
         'cnpj',
         'tipo_match',
@@ -42,6 +44,7 @@ class Ocorrencia extends Model
             'notificado_email' => 'boolean',
             'notificado_whatsapp' => 'boolean',
             'notificado_em' => 'datetime',
+            'ativo' => 'boolean',
         ];
     }
 
@@ -53,6 +56,11 @@ class Ocorrencia extends Model
     public function empresa(): BelongsTo
     {
         return $this->belongsTo(Empresa::class);
+    }
+
+    public function processamento(): BelongsTo
+    {
+        return $this->belongsTo(DiarioProcessamento::class, 'diario_processamento_id');
     }
 
     public function scopePorTipoMatch($query, string $tipo)
@@ -89,6 +97,11 @@ class Ocorrencia extends Model
     public function scopeAltaConfianca($query)
     {
         return $query->where('confiabilidade', 'alta');
+    }
+
+    public function scopeAtivas($query)
+    {
+        return $query->where('ativo', true);
     }
 
     public function scopePendentes($query)

@@ -19,6 +19,7 @@ use Filament\Tables\Filters\TernaryFilter;
 use App\Services\NotificationService;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Filament\Tables\Actions\Action;
 
@@ -632,6 +633,17 @@ class OcorrenciaResource extends Resource
     public static function canDelete($record): bool
     {
         return false;
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+
+        if (Schema::hasColumn('ocorrencias', 'ativo')) {
+            $query->where('ativo', true);
+        }
+
+        return $query;
     }
 
     protected static function pdfUrl($record): ?string
