@@ -80,7 +80,12 @@ class Empresa extends Model
             $palavras = explode(' ', $this->nome);
             if (count($palavras) > 1) {
                 $abreviacoes = array_map(fn($palavra) => substr($palavra, 0, 1), $palavras);
-                $variantes[] = implode('', $abreviacoes);
+                $sigla = implode('', $abreviacoes);
+
+                // Siglas muito curtas geram muito falso positivo (REL, IBS, PAL, etc.).
+                if (strlen($sigla) >= 5) {
+                    $variantes[] = $sigla;
+                }
             }
         }
 

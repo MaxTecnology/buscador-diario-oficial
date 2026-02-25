@@ -13,6 +13,8 @@ use App\Services\LoggingService;
 class PdfProcessorService
 {
     private const LIMIAR_SUSPEITO = 0.20; // score mínimo para registrar como suspeito
+    private const LIMIAR_REGISTRO_PADRAO = 0.55; // corte mínimo prático para reduzir ruído
+    private const MIN_VARIANTE_CHARS_PADRAO = 5;
 
     protected $parser;
     protected $loggingService;
@@ -210,7 +212,7 @@ class PdfProcessorService
         foreach ($empresas as $empresa) {
             $melhorMatch = $this->buscarMelhorMatchEmpresa($empresa, $textoNormalizado, $textoOriginal, $mapaPaginas);
             
-            if ($melhorMatch && $melhorMatch['score'] >= self::LIMIAR_SUSPEITO) {
+            if ($melhorMatch && $this->deveRegistrarOcorrencia($empresa, $melhorMatch)) {
                 
                 Log::info("Empresa {$empresa->nome}: Detectada com {$melhorMatch['tipo']} - Score: {$melhorMatch['score']}");
                 
@@ -249,7 +251,9 @@ class PdfProcessorService
                 Log::info("Match descartado por score abaixo do limiar suspeito", [
                     'empresa' => $empresa->nome,
                     'score' => $melhorMatch['score'] ?? null,
-                    'limiar' => self::LIMIAR_SUSPEITO,
+                    'limiar' => $this->getLimiarRegistro(),
+                    'tipo' => $melhorMatch['tipo'] ?? null,
+                    'termo' => $melhorMatch['termo'] ?? null,
                 ]);
             }
         }
@@ -259,6 +263,49 @@ class PdfProcessorService
         ]);
 
         return $ocorrenciasEncontradas;
+    }
+
+    protected function deveRegistrarOcorrencia(Empresa $empresa, array $match): bool
+    {
+        $score = (float) ($match['score'] ?? 0);
+        $tipo = (string) ($match['tipo'] ?? '');
+        $termo = (string) ($match['termo'] ?? '');
+
+        if ($score < $this->getLimiarRegistro()) {
+            return false;
+        }
+
+        if ($tipo === 'variante' && $this->comprimentoTermoNormalizado($termo) < $this->getMinVariantesChars()) {
+            Log::info('Match descartado por variante curta (ruído)', [
+                'empresa' => $empresa->nome,
+                'termo' => $termo,
+                'score' => $score,
+                'tipo' => $tipo,
+            ]);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    protected function getLimiarRegistro(): float
+    {
+        $limiar = (float) env('PDF_MATCH_MIN_SCORE', self::LIMIAR_REGISTRO_PADRAO);
+
+        return max(0, min(1, $limiar));
+    }
+
+    protected function getMinVariantesChars(): int
+    {
+        return max(3, (int) env('PDF_MATCH_MIN_VARIANT_CHARS', self::MIN_VARIANTE_CHARS_PADRAO));
+    }
+
+    protected function comprimentoTermoNormalizado(string $termo): int
+    {
+        $limpo = preg_replace('/[^[:alnum:]]/u', '', $termo) ?? '';
+
+        return mb_strlen($limpo);
     }
 
     protected function buscarTermosEmpresa(Empresa $empresa, string $textoLower, string $textoOriginal): array
