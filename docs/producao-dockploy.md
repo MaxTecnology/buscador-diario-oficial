@@ -266,7 +266,7 @@ Na credencial S3 do `n8n`:
 Se for enviar notificações por email:
 
 - `MAIL_MAILER=smtp`
-- `MAIL_SCHEME` (`tls`/`ssl`/vazio)
+- `MAIL_SCHEME` (`smtp` para 587 / `smtps` para 465 / vazio)
 - `MAIL_HOST`
 - `MAIL_PORT`
 - `MAIL_USERNAME`
@@ -282,7 +282,7 @@ Você pode usar `maximizebot@gmail.com` em produção para volume baixo/moderado
 
 ```dotenv
 MAIL_MAILER=smtp
-MAIL_SCHEME=tls
+MAIL_SCHEME=smtp
 MAIL_HOST=smtp.gmail.com
 MAIL_PORT=587
 MAIL_USERNAME=maximizebot@gmail.com

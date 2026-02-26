@@ -1,5 +1,16 @@
 <?php
 
+$mailScheme = env('MAIL_SCHEME');
+
+if (is_string($mailScheme)) {
+    $mailScheme = match (strtolower(trim($mailScheme))) {
+        '', 'null' => null,
+        'tls' => 'smtp',   // STARTTLS em porta 587
+        'ssl' => 'smtps',  // TLS implícito em porta 465
+        default => strtolower(trim($mailScheme)),
+    };
+}
+
 return [
 
     /*
@@ -39,7 +50,7 @@ return [
 
         'smtp' => [
             'transport' => 'smtp',
-            'scheme' => env('MAIL_SCHEME'),
+            'scheme' => $mailScheme,
             'url' => env('MAIL_URL'),
             'host' => env('MAIL_HOST', '127.0.0.1'),
             'port' => env('MAIL_PORT', 2525),
