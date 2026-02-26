@@ -228,7 +228,7 @@ class PdfProcessorService
                 $termoPersistido = $this->normalizarTermoEncontradoParaPersistencia($empresa, $melhorMatch);
                 $termoLimpo = mb_substr($termoPersistido, 0, 255);
                 $contextoLimpo = mb_substr($melhorMatch['contexto'], 0, 1000);
-                $score = $melhorMatch['score'];
+                $score = $this->normalizarScorePersistencia((float) ($melhorMatch['score'] ?? 0));
                 $scoreMinimo = $empresa->score_minimo ?? 0.85;
                 $confiabilidade = $score >= $scoreMinimo ? 'alta' : 'suspeito';
                 $statusRevisao = 'pendente';
@@ -624,8 +624,14 @@ class PdfProcessorService
                     if (strlen($variacao) >= 6 && strpos($textoNormalizado, $variacao) !== false) {
                         $posicao = strpos($textoNormalizado, $variacao);
                         $contexto = $this->extrairContexto($textoOriginal, $posicao, strlen($variacao));
-                        
-                        $scoreInscricao = 0.80; // Score um pouco menor para variações
+
+                        // Se a variação encontrada for exatamente o corpo da IE (8 dígitos),
+                        // tratamos como match forte de negócio (caso típico no diário).
+                        $ieBase = $this->extrairCorpoInscricaoEstadual($empresa->inscricao_estadual);
+                        $scoreInscricao = ($ieBase !== null && $variacao === $ieBase)
+                            ? 1.00 // Match perfeito para corpo da IE (8 dígitos) = 100%
+                            : 0.80; // variações genéricas mantêm score conservador
+
                         if ($scoreInscricao > $melhorScore) {
                             $melhorMatch = [
                                 'termo' => $variacao,
@@ -891,6 +897,16 @@ class PdfProcessorService
         $texto = preg_replace('/[\x{0080}-\x{009F}]/u', '', $texto);
         $texto = preg_replace('/\s+/', ' ', $texto);
         return trim($texto);
+    }
+
+    protected function normalizarScorePersistencia(float $score): float
+    {
+        if ($score > 1 && $score <= 100) {
+            // Proteção defensiva caso algum trecho gere score em percentual.
+            $score = $score / 100;
+        }
+
+        return max(0, min(1, $score));
     }
 
     protected function getDiariosDisk()

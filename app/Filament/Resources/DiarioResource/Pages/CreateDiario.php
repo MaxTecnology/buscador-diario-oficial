@@ -5,6 +5,7 @@ namespace App\Filament\Resources\DiarioResource\Pages;
 use App\Filament\Resources\DiarioResource;
 use App\Models\Diario;
 use App\Models\ActivityLog;
+use App\Jobs\ProcessarPdfJob;
 use Filament\Support\Exceptions\Halt;
 use Filament\Resources\Pages\CreateRecord;
 use Filament\Notifications\Notification;
@@ -143,7 +144,32 @@ class CreateDiario extends CreateRecord
         // Registrar log de atividade
         ActivityLog::logDiarioCreated($diario);
 
-        // Não processar automaticamente; deixar como pendente até operador acionar
+        if ($diario->caminho_arquivo) {
+            $diario->update([
+                'status' => 'processando',
+                'status_processamento' => 'processando',
+                'erro_mensagem' => null,
+                'erro_processamento' => null,
+            ]);
+
+            ProcessarPdfJob::dispatch($diario, [
+                'tipo' => 'inicial',
+                'modo' => 'completo',
+                'motivo' => 'Processamento automático após criação manual',
+                'notificar' => true,
+                'limpar_ocorrencias_anteriores' => true,
+                'iniciado_por_user_id' => Auth::id(),
+            ]);
+
+            Notification::make()
+                ->title('Diário criado e enfileirado')
+                ->body('O arquivo foi salvo e enviado para a fila de processamento.')
+                ->success()
+                ->send();
+
+            return;
+        }
+
         $diario->update([
             'status' => 'pendente',
             'status_processamento' => 'pendente',
@@ -153,8 +179,13 @@ class CreateDiario extends CreateRecord
 
         Notification::make()
             ->title('Diário criado')
-            ->body('Arquivo enviado. Clique em "Processar" na lista de diários quando quiser iniciar a detecção.')
-            ->info()
+            ->body('Registro criado sem arquivo. O processamento não foi iniciado.')
+            ->warning()
             ->send();
+    }
+
+    protected function getRedirectUrl(): string
+    {
+        return static::getResource()::getUrl('index');
     }
 }
