@@ -488,15 +488,7 @@ class OcorrenciaResource extends Resource
                                         ->schema([
                                             Forms\Components\Select::make('user_id')
                                                 ->label('Usuário')
-                                                ->options(function ($get, $livewire) {
-                                                    $record = $livewire->getRecord();
-                                                    return $record->empresa->users->mapWithKeys(function ($user) {
-                                                        $nome = $user->nome ?? $user->name ?? 'Sem nome';
-                                                        $email = $user->email;
-                                                        $telefone = $user->telefone_whatsapp ? " | WhatsApp: {$user->telefone_whatsapp}" : '';
-                                                        return [$user->id => "{$nome} ({$email}){$telefone}"];
-                                                    })->toArray();
-                                                })
+                                                ->options(fn ($record) => static::usuariosNotificacaoOptions($record))
                                                 ->required()
                                                 ->searchable(),
                                             Forms\Components\CheckboxList::make('tipos')
@@ -508,19 +500,8 @@ class OcorrenciaResource extends Resource
                                                 ->required()
                                                 ->columns(2),
                                         ])
-                                        ->defaultItems(function ($livewire) {
-                                            $record = $livewire->getRecord();
-                                            return $record->empresa->users->map(function ($user) {
-                                                $tipos = [];
-                                                if ($user->pivot->notificacao_email) $tipos[] = 'email';
-                                                if ($user->pivot->notificacao_whatsapp) $tipos[] = 'whatsapp';
-                                                
-                                                return [
-                                                    'user_id' => $user->id,
-                                                    'tipos' => $tipos,
-                                                ];
-                                            })->toArray();
-                                        })
+                                        ->default(fn ($record) => static::usuariosNotificacaoDefault($record))
+                                        ->defaultItems(1)
                                         ->minItems(1)
                                         ->addActionLabel('Adicionar Usuário')
                                         ->columns(2),
@@ -666,5 +647,41 @@ class OcorrenciaResource extends Resource
         }
 
         return $url;
+    }
+
+    protected static function usuariosNotificacaoOptions($record): array
+    {
+        $users = $record?->empresa?->users ?? collect();
+
+        return $users->mapWithKeys(function ($user) {
+            $nome = $user->nome ?? $user->name ?? 'Sem nome';
+            $email = $user->email ?? 'sem-email';
+            $telefone = $user->telefone_whatsapp ? " | WhatsApp: {$user->telefone_whatsapp}" : '';
+
+            return [$user->id => "{$nome} ({$email}){$telefone}"];
+        })->toArray();
+    }
+
+    protected static function usuariosNotificacaoDefault($record): array
+    {
+        $users = $record?->empresa?->users ?? collect();
+
+        return $users->map(function ($user) {
+            $tipos = [];
+            $pivot = $user->pivot ?? null;
+
+            if ($pivot?->notificacao_email) {
+                $tipos[] = 'email';
+            }
+
+            if ($pivot?->notificacao_whatsapp) {
+                $tipos[] = 'whatsapp';
+            }
+
+            return [
+                'user_id' => $user->id,
+                'tipos' => $tipos,
+            ];
+        })->values()->toArray();
     }
 }
