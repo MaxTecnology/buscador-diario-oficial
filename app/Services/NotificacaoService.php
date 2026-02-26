@@ -49,8 +49,17 @@ class NotificacaoService
 
             // ABORDAGEM SIMPLIFICADA: usar apenas a relação Eloquent
             $usuarios = $ocorrencia->empresa->users()
-                ->where('telefone_whatsapp', '!=', null)
-                ->where('telefone_whatsapp', '!=', '')
+                ->where(function ($query) {
+                    $query
+                        ->where(function ($q) {
+                            $q->whereNotNull('email')
+                                ->where('email', '!=', '');
+                        })
+                        ->orWhere(function ($q) {
+                            $q->whereNotNull('telefone_whatsapp')
+                                ->where('telefone_whatsapp', '!=', '');
+                        });
+                })
                 ->get();
             
             Log::info('Usuários encontrados (abordagem simplificada):', [
