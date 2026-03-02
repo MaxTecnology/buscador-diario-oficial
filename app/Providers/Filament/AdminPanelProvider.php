@@ -23,7 +23,7 @@ class AdminPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
-        $brandName = env('FILAMENT_BRAND_NAME', config('app.name', 'Diario'));
+        $brandName = $this->resolveBrandName();
         $brandLogo = $this->resolveBrandLogo();
 
         return $panel
@@ -36,7 +36,9 @@ class AdminPanelProvider extends PanelProvider
             ->databaseNotifications()
             ->databaseNotificationsPolling('10s')
             ->colors([
-                'primary' => Color::Amber,
+                'primary' => Color::Sky,
+                'info' => Color::Blue,
+                'gray' => Color::Slate,
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
@@ -68,6 +70,21 @@ class AdminPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
             ]);
+    }
+
+    private function resolveBrandName(): string
+    {
+        $brandName = trim((string) env('FILAMENT_BRAND_NAME', ''));
+
+        if ($brandName === '') {
+            $brandName = trim((string) config('app.name', ''));
+        }
+
+        if ($brandName === '' || strcasecmp($brandName, 'Laravel') === 0) {
+            return 'G2A Diario';
+        }
+
+        return $brandName;
     }
 
     private function resolveBrandLogo(): string
