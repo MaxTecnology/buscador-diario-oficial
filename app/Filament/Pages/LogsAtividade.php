@@ -22,7 +22,7 @@ class LogsAtividade extends Page implements HasForms
     
     protected static ?string $title = 'Timeline de Atividades dos Usuários';
     
-    protected static ?string $navigationGroup = 'Sistema';
+    protected static ?string $navigationGroup = 'Admin';
     
     protected static ?int $navigationSort = 4;
 

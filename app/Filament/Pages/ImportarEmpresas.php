@@ -20,7 +20,7 @@ class ImportarEmpresas extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-arrow-up-tray';
     
-    protected static ?string $navigationGroup = 'Gestão';
+    protected static ?string $navigationGroup = 'Cadastros';
     
     protected static ?string $title = 'Importar Empresas';
     

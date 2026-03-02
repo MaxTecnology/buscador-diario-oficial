@@ -15,7 +15,7 @@ class DiariosCompactos extends Page
     
     protected static ?string $title = 'Visualização Compacta';
     
-    protected static ?string $navigationGroup = 'Monitoramento';
+    protected static ?string $navigationGroup = 'Operação';
     
     protected static ?int $navigationSort = 3;
 

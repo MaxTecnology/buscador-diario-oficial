@@ -24,7 +24,7 @@ class DiarioResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-document-text';
 
-    protected static ?string $navigationGroup = 'Processamento';
+    protected static ?string $navigationGroup = 'Operação';
 
     protected static ?int $navigationSort = 1;
 

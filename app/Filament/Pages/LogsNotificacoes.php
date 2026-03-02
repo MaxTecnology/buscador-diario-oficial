@@ -19,7 +19,7 @@ class LogsNotificacoes extends Page implements HasForms
     
     protected static ?string $title = 'Logs de Email e WhatsApp';
     
-    protected static ?string $navigationGroup = 'Sistema';
+    protected static ?string $navigationGroup = 'Comunicação';
     
     protected static ?int $navigationSort = 5;
 

@@ -10,6 +10,11 @@ class NotificationStats extends BaseWidget
 {
     protected static ?int $sort = 6;
 
+    protected function getColumns(): int
+    {
+        return 3;
+    }
+
     protected function getStats(): array
     {
         $notificationService = new NotificationService();

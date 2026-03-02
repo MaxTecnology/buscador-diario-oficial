@@ -18,7 +18,7 @@ class TemplatesNotificacao extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-chat-bubble-left-right';
     
-    protected static ?string $navigationGroup = 'Configurações';
+    protected static ?string $navigationGroup = 'Comunicação';
     
     protected static ?string $title = 'Templates de Notificação';
     

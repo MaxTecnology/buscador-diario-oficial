@@ -29,7 +29,7 @@ class OcorrenciaResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-magnifying-glass';
 
-    protected static ?string $navigationGroup = 'Resultados';
+    protected static ?string $navigationGroup = 'Operação';
 
     protected static ?int $navigationSort = 1;
 

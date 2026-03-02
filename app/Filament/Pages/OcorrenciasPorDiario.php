@@ -16,7 +16,7 @@ class OcorrenciasPorDiario extends Page
     
     protected static ?string $title = 'Ocorrências por Diário';
     
-    protected static ?string $navigationGroup = 'Monitoramento';
+    protected static ?string $navigationGroup = 'Operação';
     
     protected static ?int $navigationSort = 2;
 

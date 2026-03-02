@@ -25,7 +25,7 @@ class WhatsAppSettings extends Page implements HasForms
 
     protected static string $view = 'filament.pages.whatsapp-settings';
 
-    protected static ?string $navigationGroup = 'Configurações';
+    protected static ?string $navigationGroup = 'Comunicação';
 
     protected static ?string $title = 'Configurações do WhatsApp';
 

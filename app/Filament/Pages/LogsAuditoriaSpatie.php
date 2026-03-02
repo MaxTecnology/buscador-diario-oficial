@@ -19,7 +19,7 @@ class LogsAuditoriaSpatie extends Page implements HasForms
     
     protected static ?string $title = 'Logs de Auditoria do Sistema';
     
-    protected static ?string $navigationGroup = 'Sistema';
+    protected static ?string $navigationGroup = 'Admin';
     
     protected static ?int $navigationSort = 6;
 

@@ -19,7 +19,7 @@ class EmpresaResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-building-office';
 
-    protected static ?string $navigationGroup = 'Gestão';
+    protected static ?string $navigationGroup = 'Cadastros';
 
     protected static ?int $navigationSort = 1;
 

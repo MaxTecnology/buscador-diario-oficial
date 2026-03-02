@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Jobs\SendWhatsAppNotification;
+use App\Models\ConfiguracaoSistema;
 use App\Models\Ocorrencia;
 use App\Models\User;
 use App\Models\SystemConfig;
@@ -56,12 +57,12 @@ class NotificationService
     protected function sendNotificationsToUser(User $user, Ocorrencia $ocorrencia): void
     {
         // Verificar se WhatsApp está habilitado
-        if (SystemConfig::getValue('notifications.whatsapp_enabled', false)) {
+        if ($this->isWhatsAppEnabled()) {
             $this->sendWhatsAppNotification($user, $ocorrencia);
         }
 
         // Verificar se email está habilitado
-        if (SystemConfig::getValue('notifications.email_enabled', false)) {
+        if ($this->isEmailEnabled()) {
             $this->sendEmailNotification($user, $ocorrencia);
         }
     }
@@ -199,8 +200,50 @@ class NotificationService
             'total_users' => $totalUsers,
             'users_with_whatsapp' => $usersWithWhatsApp,
             'pending_notifications' => $ocorrenciasNaoNotificadas,
-            'whatsapp_enabled' => SystemConfig::getValue('notifications.whatsapp_enabled', false),
-            'email_enabled' => SystemConfig::getValue('notifications.email_enabled', false),
+            'whatsapp_enabled' => $this->isWhatsAppEnabled(),
+            'email_enabled' => $this->isEmailEnabled(),
         ];
+    }
+
+    private function isWhatsAppEnabled(): bool
+    {
+        return $this->resolveEnabledConfig(
+            ['whatsapp_enabled', 'notificacoes_whatsapp_ativo'],
+            ['notifications.whatsapp_enabled'],
+            false
+        );
+    }
+
+    private function isEmailEnabled(): bool
+    {
+        return $this->resolveEnabledConfig(
+            ['notificacoes_email_ativo'],
+            ['notifications.email_enabled'],
+            false
+        );
+    }
+
+    private function resolveEnabledConfig(array $configuracaoSistemaKeys, array $systemConfigKeys, bool $default): bool
+    {
+        foreach ($configuracaoSistemaKeys as $key) {
+            $entry = ConfiguracaoSistema::query()
+                ->where('chave', $key)
+                ->where('ativo', true)
+                ->first();
+
+            if ($entry !== null) {
+                return filter_var($entry->valor, FILTER_VALIDATE_BOOLEAN);
+            }
+        }
+
+        foreach ($systemConfigKeys as $key) {
+            $value = SystemConfig::getValue($key, null);
+
+            if ($value !== null) {
+                return filter_var($value, FILTER_VALIDATE_BOOLEAN);
+            }
+        }
+
+        return $default;
     }
 }

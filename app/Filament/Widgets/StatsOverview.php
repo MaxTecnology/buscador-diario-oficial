@@ -11,6 +11,22 @@ use Filament\Widgets\StatsOverviewWidget\Stat;
 
 class StatsOverview extends BaseWidget
 {
+    protected function getColumns(): int
+    {
+        $count = count($this->getStats());
+
+        if ($count < 3) {
+            return 3;
+        }
+
+        // Evita uma última linha com apenas 1 card.
+        if (($count % 3) === 1) {
+            return 4;
+        }
+
+        return 3;
+    }
+
     protected function getStats(): array
     {
         $totalEmpresas = Empresa::count();
