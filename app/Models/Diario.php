@@ -60,6 +60,11 @@ class Diario extends Model
         return $this->hasMany(DiarioProcessamento::class);
     }
 
+    public function ingestaoLogs(): HasMany
+    {
+        return $this->hasMany(IngestaoDiarioLog::class);
+    }
+
     public function scopePendentes($query)
     {
         return $query->where('status', 'pendente');

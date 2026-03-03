@@ -82,6 +82,7 @@ class CreateDiario extends CreateRecord
             $dataDiario = !empty($data['data_diario'])
                 ? \Illuminate\Support\Carbon::parse($data['data_diario'])
                 : now();
+            $particaoData = $dataDiario->format('Y-m-d');
 
             $nomeBase = pathinfo($data['nome_arquivo'], PATHINFO_FILENAME);
             $nomeSeguro = Str::slug($nomeBase);
@@ -101,7 +102,7 @@ class CreateDiario extends CreateRecord
             $caminhoFinal = sprintf(
                 'diarios/%s/%s/%s',
                 $estado,
-                $dataDiario->format('Y/m/d'),
+                $particaoData,
                 $nomeFinal
             );
 
@@ -110,7 +111,7 @@ class CreateDiario extends CreateRecord
                     $caminhoFinal = sprintf(
                         'diarios/%s/%s/%s_%s.pdf',
                         $estado,
-                        $dataDiario->format('Y/m/d'),
+                        $particaoData,
                         $estado . '_' . $dataDiario->format('Ymd') . '_' . $nomeSeguro,
                         Str::uuid()
                     );

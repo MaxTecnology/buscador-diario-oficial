@@ -1,0 +1,119 @@
+{
+  "name": "diario-oficial",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "https://diario.imprensaoficial.al.gov.br/apinova/api/editions/published",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "Buscar Edições Disponíveis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -688,
+        144
+      ],
+      "id": "ca664a43-3852-4f6a-9c13-776ed559c1e0"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Processar resposta da API e extrair informações das edições\nconst items = [];\nconst today = new Date();\nconst todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD\n\n// Processar resposta da API /published\nfor (const item of $input.all()) {\n  const data = item.json;\n  \n  if (data.status === 'success' && data.editions) {\n    for (const edition of data.editions) {\n      const publicationDate = new Date(edition.publication_date);\n      const dateStr = publicationDate.toISOString().split('T')[0];\n      \n      // Filtrar edições dos últimos 7 dias\n      const daysDiff = (today - publicationDate) / (1000 * 60 * 60 * 24);\n      \n      if (daysDiff <= 7) {\n        // Determinar se é suplemento\n        const supplement = edition.suplement ? '_suplemento' : '';\n        \n        items.push({\n          json: {\n            editionId: edition.id,\n            number: edition.number,\n            date: dateStr,\n            publicationDate: edition.publication_date,\n            isSuplement: edition.suplement,\n            typeName: edition.edition_type_name,\n            downloads: edition.downloads,\n            views: edition.views,\n            downloadUrl: `https://diario.imprensaoficial.al.gov.br/apinova/api/editions/downloadPdf/${edition.id}`,\n            fileName: `diario_oficial_al_${dateStr}_n${edition.number}${supplement}_id${edition.id}.pdf`\n          }\n        });\n      }\n    }\n  }\n}\n\n// Se não encontrou edições, tentar apenas a mais recente\nif (items.length === 0) {\n  console.log('Nenhuma edição encontrada nos últimos 7 dias, tentando fallback...');\n  \n  // Fallback: usar ID estimado baseado na data atual\n  const startDate = new Date('2020-01-01');\n  const daysSinceStart = Math.floor((today - startDate) / (1000 * 60 * 60 * 24));\n  const estimatedId = 45000 + daysSinceStart;\n  \n  items.push({\n    json: {\n      editionId: estimatedId,\n      number: 'unknown',\n      date: todayStr,\n      publicationDate: today.toISOString(),\n      isSuplement: false,\n      typeName: 'Diário Oficial do Estado de Alagoas',\n      downloads: 0,\n      views: 0,\n      downloadUrl: `https://diario.imprensaoficial.al.gov.br/apinova/api/editions/downloadPdf/${estimatedId}`,\n      fileName: `diario_oficial_al_${todayStr}_id${estimatedId}.pdf`\n    }\n  });\n}\n\nconsole.log(`✅ Encontradas ${items.length} edições para download:`);\nitems.forEach(item => {\n  const edition = item.json;\n  console.log(`📄 ${edition.fileName} (${edition.downloads} downloads, ${edition.views} views)`);\n});\n\nreturn items;"
+      },
+      "name": "Processar Edições",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        144
+      ],
+      "id": "8e875913-0906-40d2-8486-278c66d8397a"
+    },
+    {
+      "parameters": {
+        "url": "={{$json.downloadUrl}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "name": "Download PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -208,
+        144
+      ],
+      "id": "1d2dde2d-f034-4b15-b32f-969e199e043f"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -880,
+        144
+      ],
+      "id": "ca145241-49c3-4677-9bf7-08911a69aefe",
+      "name": "When clicking ‘Execute workflow’"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Buscar Edições Disponíveis": {
+      "main": [
+        [
+          {
+            "node": "Processar Edições",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Edições": {
+      "main": [
+        [
+          {
+            "node": "Download PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download PDF": {
+      "main": [
+        []
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Buscar Edições Disponíveis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "15a56515-8833-4779-96c6-d784c2fee26d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "e0ad15c565eec43ce7bb985d5c8e0d923e5a51c07ca61d275e472bf5fa1d4a68"
+  },
+  "id": "Yt3RfYtvYnKQdcfY",
+  "tags": []
+}
