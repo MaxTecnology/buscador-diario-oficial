@@ -4,16 +4,17 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\UserResource\Pages;
 use App\Filament\Resources\UserResource\RelationManagers;
+use App\Models\Empresa;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
+use Filament\Forms\Set;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Hash;
-use Spatie\Permission\Models\Role;
 use App\Services\NotificationService;
 use Filament\Notifications\Notification;
 
@@ -30,6 +31,55 @@ class UserResource extends Resource
     protected static ?string $modelLabel = 'Usuário';
 
     protected static ?string $pluralModelLabel = 'Usuários';
+
+    public static function roleOptions(): array
+    {
+        return [
+            'admin' => 'Admin',
+            'manager' => 'Gestor',
+            'operator' => 'Usuário',
+            'viewer' => 'Consulta',
+            'notification_only' => 'Somente notificação',
+        ];
+    }
+
+    public static function resolvePrimaryRole(?User $record): ?string
+    {
+        if (! $record) {
+            return null;
+        }
+
+        $roleNames = $record->roles()->pluck('name');
+        $priority = array_keys(static::roleOptions());
+
+        foreach ($priority as $roleName) {
+            if ($roleNames->contains($roleName)) {
+                return $roleName;
+            }
+        }
+
+        return $roleNames->first();
+    }
+
+    public static function shouldUseAllEmpresas(?User $record): bool
+    {
+        if (! $record) {
+            return false;
+        }
+
+        $totalEmpresas = Empresa::query()->count();
+
+        if ($totalEmpresas === 0) {
+            return false;
+        }
+
+        return $record->empresas()->count() >= $totalEmpresas;
+    }
+
+    public static function allEmpresaIds(): array
+    {
+        return Empresa::query()->orderBy('nome')->pluck('id')->all();
+    }
 
     public static function form(Form $form): Form
     {
@@ -71,23 +121,73 @@ class UserResource extends Resource
                         Forms\Components\Toggle::make('pode_fazer_login')
                             ->label('Pode fazer login')
                             ->default(true),
-                        Forms\Components\Select::make('roles')
-                            ->label('Papel')
-                            ->relationship('roles', 'name')
-                            ->multiple()
-                            ->preload()
-                            ->required(),
+                        Forms\Components\Select::make('role_name')
+                            ->label('Perfil de Acesso')
+                            ->options(static::roleOptions())
+                            ->default('operator')
+                            ->required()
+                            ->native(false)
+                            ->live()
+                            ->helperText('Defina um único perfil principal para o usuário.')
+                            ->afterStateHydrated(function (Forms\Components\Select $component, ?User $record): void {
+                                $component->state(static::resolvePrimaryRole($record) ?? 'operator');
+                            })
+                            ->afterStateUpdated(function (Set $set, ?string $state): void {
+                                if ($state === 'notification_only') {
+                                    $set('pode_fazer_login', false);
+                                }
+                            }),
                     ])->columns(2),
                     
                 Forms\Components\Section::make('Empresas Vinculadas')
                     ->schema([
+                        Forms\Components\Radio::make('empresa_scope')
+                            ->label('Escopo de Empresas')
+                            ->options([
+                                'manual' => 'Selecionar manualmente',
+                                'all' => 'Vincular todas as empresas',
+                            ])
+                            ->default('manual')
+                            ->inline()
+                            ->inlineLabel(false)
+                            ->live()
+                            ->afterStateHydrated(function (Forms\Components\Radio $component, ?User $record): void {
+                                $component->state(static::shouldUseAllEmpresas($record) ? 'all' : 'manual');
+                            })
+                            ->afterStateUpdated(function (Set $set, ?string $state): void {
+                                if ($state === 'all') {
+                                    $set('empresas', static::allEmpresaIds());
+                                }
+                            }),
+                        Forms\Components\Actions::make([
+                            Forms\Components\Actions\Action::make('marcar_todas_empresas')
+                                ->label('Marcar todas')
+                                ->icon('heroicon-o-check-badge')
+                                ->color('success')
+                                ->action(function (Set $set): void {
+                                    $set('empresas', static::allEmpresaIds());
+                                }),
+                            Forms\Components\Actions\Action::make('limpar_empresas')
+                                ->label('Limpar seleção')
+                                ->icon('heroicon-o-x-circle')
+                                ->color('gray')
+                                ->action(function (Set $set): void {
+                                    $set('empresas', []);
+                                }),
+                        ])
+                            ->visible(fn (Get $get): bool => $get('empresa_scope') === 'manual'),
                         Forms\Components\Select::make('empresas')
                             ->label('Empresas')
-                            ->relationship('empresas', 'nome')
+                            ->options(fn () => Empresa::query()->orderBy('nome')->pluck('nome', 'id')->all())
                             ->multiple()
                             ->preload()
                             ->searchable()
-                            ->helperText('Selecione as empresas que este usuário pode acessar'),
+                            ->helperText('Selecione as empresas que este usuário pode acessar.')
+                            ->visible(fn (Get $get): bool => $get('empresa_scope') === 'manual')
+                            ->required(fn (Get $get): bool => $get('empresa_scope') === 'manual')
+                            ->afterStateHydrated(function (Forms\Components\Select $component, ?User $record): void {
+                                $component->state($record?->empresas()->pluck('empresas.id')->all() ?? []);
+                            }),
                     ])
                     ->collapsible(),
             ]);
@@ -124,6 +224,7 @@ class UserResource extends Resource
                         'danger' => 'admin',
                         'warning' => 'manager',
                         'success' => 'operator',
+                        'info' => 'notification_only',
                         'gray' => 'viewer',
                     ])
                     ->sortable(),
