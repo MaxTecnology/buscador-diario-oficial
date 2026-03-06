@@ -99,7 +99,7 @@ services:
       --sleep=3
       --tries=3
       --timeout=${QUEUE_WORKER_TIMEOUT:-900}
-      --memory=512
+      --memory=${QUEUE_WORKER_MEMORY:-2048}
       --max-jobs=500
       --max-time=3600"
 
