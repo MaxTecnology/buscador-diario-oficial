@@ -65,11 +65,9 @@ class PdfProcessorService
                 ]
             );
 
-            $pdf = $this->parser->parseFile($caminhoArquivo);
-            $textoCompleto = $pdf->getText();
-            
-            // Contar número de páginas do PDF
-            $totalPaginas = $this->contarPaginasPdf($pdf);
+            $dadosExtracao = $this->extrairTextoDoPdf($caminhoArquivo, $diario);
+            $textoCompleto = $dadosExtracao['texto_completo'];
+            $totalPaginas = (int) $dadosExtracao['total_paginas'];
             Log::info("PDF {$diario->nome_arquivo}: {$totalPaginas} página(s) detectadas");
             
             // Limpar caracteres UTF-8 inválidos de forma mais robusta
@@ -90,7 +88,7 @@ class PdfProcessorService
             $textoCompleto = trim($textoCompleto);
 
             // Normalizar texto por página para mapear posições -> página
-            $dadosPaginas = $this->normalizarTextoPorPagina($pdf);
+            $dadosPaginas = $this->normalizarTextoPorPaginas($dadosExtracao['paginas']);
             $textoNormalizado = $dadosPaginas['texto_normalizado'];
             $mapaPaginas = $dadosPaginas['mapa_paginas'];
             
@@ -478,43 +476,140 @@ class PdfProcessorService
         return trim($texto);
     }
 
+    protected function extrairTextoDoPdf(string $caminhoArquivo, Diario $diario): array
+    {
+        try {
+            return $this->extrairTextoComPdftotext($caminhoArquivo);
+        } catch (\Throwable $e) {
+            Log::warning("Falha na extração via pdftotext, aplicando fallback smalot/pdfparser", [
+                'diario_id' => $diario->id,
+                'arquivo' => $diario->nome_arquivo,
+                'erro' => $e->getMessage(),
+            ]);
+
+            return $this->extrairTextoComSmalot($caminhoArquivo);
+        }
+    }
+
+    protected function extrairTextoComPdftotext(string $caminhoArquivo): array
+    {
+        $pdftotextPath = trim((string) shell_exec('command -v pdftotext 2>/dev/null'));
+        if ($pdftotextPath === '') {
+            throw new \RuntimeException('Comando pdftotext não encontrado no container.');
+        }
+
+        $totalPaginas = $this->obterTotalPaginasViaPdfInfo($caminhoArquivo);
+        $chunkSize = max(1, (int) env('PDF_PROCESS_PAGE_CHUNK_SIZE', 20));
+
+        $paginas = [];
+
+        for ($inicio = 1; $inicio <= $totalPaginas; $inicio += $chunkSize) {
+            $fim = min($totalPaginas, $inicio + $chunkSize - 1);
+
+            $comando = sprintf(
+                'pdftotext -enc UTF-8 -q -f %d -l %d %s - 2>/dev/null',
+                $inicio,
+                $fim,
+                escapeshellarg($caminhoArquivo)
+            );
+
+            $saida = shell_exec($comando);
+            if ($saida === null) {
+                throw new \RuntimeException("Falha ao executar pdftotext no bloco {$inicio}-{$fim}.");
+            }
+
+            $paginasChunk = preg_split("/\f/u", $saida) ?: [];
+            $esperadas = $fim - $inicio + 1;
+
+            for ($i = 0; $i < $esperadas; $i++) {
+                $textoPagina = (string) ($paginasChunk[$i] ?? '');
+                $paginas[] = $this->sanearTextoBasico($textoPagina);
+            }
+        }
+
+        $textoCompleto = trim(implode("\n", $paginas));
+        if ($textoCompleto === '') {
+            throw new \RuntimeException('pdftotext retornou conteúdo vazio.');
+        }
+
+        return [
+            'texto_completo' => $textoCompleto,
+            'total_paginas' => max(1, count($paginas)),
+            'paginas' => $paginas,
+        ];
+    }
+
+    protected function extrairTextoComSmalot(string $caminhoArquivo): array
+    {
+        $pdf = $this->parser->parseFile($caminhoArquivo);
+        $textoCompleto = (string) $pdf->getText();
+
+        $paginas = [];
+        if (method_exists($pdf, 'getPages')) {
+            foreach ($pdf->getPages() as $page) {
+                $paginas[] = $this->sanearTextoBasico((string) $page->getText());
+            }
+        }
+
+        if ($paginas === []) {
+            $paginas[] = $this->sanearTextoBasico($textoCompleto);
+        }
+
+        return [
+            'texto_completo' => $textoCompleto,
+            'total_paginas' => max(1, count($paginas)),
+            'paginas' => $paginas,
+        ];
+    }
+
+    protected function obterTotalPaginasViaPdfInfo(string $caminhoArquivo): int
+    {
+        $pdfinfoPath = trim((string) shell_exec('command -v pdfinfo 2>/dev/null'));
+        if ($pdfinfoPath === '') {
+            throw new \RuntimeException('Comando pdfinfo não encontrado no container.');
+        }
+
+        $comando = sprintf('pdfinfo %s 2>/dev/null', escapeshellarg($caminhoArquivo));
+        $saida = shell_exec($comando);
+
+        if (! is_string($saida) || $saida === '') {
+            throw new \RuntimeException('Falha ao obter metadados de páginas via pdfinfo.');
+        }
+
+        if (! preg_match('/^Pages:\s+(\d+)/mi', $saida, $matches)) {
+            throw new \RuntimeException('pdfinfo não retornou o número de páginas.');
+        }
+
+        return max(1, (int) ($matches[1] ?? 1));
+    }
+
     /**
      * Normaliza texto por página para construir um mapa de posições -> página.
      */
-    protected function normalizarTextoPorPagina($pdf): array
+    protected function normalizarTextoPorPaginas(array $paginas): array
     {
         $textoNormalizado = '';
         $mapaPaginas = [];
 
-        try {
-            if (method_exists($pdf, 'getPages')) {
-                $pages = $pdf->getPages();
-                foreach ($pages as $index => $page) {
-                    $textoPagina = $page->getText();
-                    $textoPagina = $this->sanearTextoBasico($textoPagina);
-                    $textoPaginaNormalizado = $this->normalizarTexto($textoPagina);
+        foreach ($paginas as $index => $textoPagina) {
+            $textoPaginaNormalizado = $this->normalizarTexto($this->sanearTextoBasico((string) $textoPagina));
+            $textoPaginaNormalizado = trim($textoPaginaNormalizado);
 
-                    $textoPaginaNormalizado = trim($textoPaginaNormalizado);
-                    $inicio = strlen($textoNormalizado);
-                    if ($textoNormalizado !== '' && $textoPaginaNormalizado !== '') {
-                        $textoNormalizado .= ' ';
-                        $inicio = strlen($textoNormalizado);
-                    }
-                    $textoNormalizado .= $textoPaginaNormalizado;
-                    $mapaPaginas[] = [
-                        'pagina' => $index + 1,
-                        'start' => $inicio,
-                        'end' => strlen($textoNormalizado),
-                    ];
-                }
+            $inicio = strlen($textoNormalizado);
+            if ($textoNormalizado !== '' && $textoPaginaNormalizado !== '') {
+                $textoNormalizado .= ' ';
+                $inicio = strlen($textoNormalizado);
             }
-        } catch (\Throwable $e) {
-            Log::warning('Falha ao normalizar texto por página: ' . $e->getMessage());
+
+            $textoNormalizado .= $textoPaginaNormalizado;
+            $mapaPaginas[] = [
+                'pagina' => $index + 1,
+                'start' => $inicio,
+                'end' => strlen($textoNormalizado),
+            ];
         }
 
-        if (empty($textoNormalizado)) {
-            // Fallback: tudo em uma página
-            $textoNormalizado = $this->normalizarTexto($pdf->getText() ?? '');
+        if ($mapaPaginas === []) {
             $mapaPaginas[] = [
                 'pagina' => 1,
                 'start' => 0,

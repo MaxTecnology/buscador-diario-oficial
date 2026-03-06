@@ -19,9 +19,9 @@ class ProcessarPdfJob implements ShouldQueue
 {
     use Queueable, InteractsWithQueue, SerializesModels;
 
-    public $timeout = 600; // 10 minutos
-    public $tries = 3;
-
+    public int $timeout;
+    public int $tries;
+    public bool $failOnTimeout = true;
     /**
      * Create a new job instance.
      */
@@ -29,7 +29,9 @@ class ProcessarPdfJob implements ShouldQueue
         public Diario $diario,
         public array $opcoes = [],
     ) {
-        //
+        $this->timeout = max(300, (int) env('PDF_PROCESS_JOB_TIMEOUT', 1800));
+        $this->tries = max(1, (int) env('PDF_PROCESS_JOB_TRIES', 3));
+        $this->onQueue((string) env('PDF_PROCESS_QUEUE', 'pdf-heavy'));
     }
 
     /**
@@ -43,11 +45,13 @@ class ProcessarPdfJob implements ShouldQueue
             $opcoes = $this->normalizarOpcoes();
 
             Log::info("Iniciando processamento assíncrono do PDF: {$this->diario->nome_arquivo}");
+            $tentativas = ((int) ($this->diario->tentativas ?? 0)) + 1;
             $this->diario->update([
                 'status' => 'processando',
                 'status_processamento' => 'processando',
                 'erro_mensagem' => null,
                 'erro_processamento' => null,
+                'tentativas' => $tentativas,
             ]);
 
             if (Schema::hasTable('diario_processamentos')) {

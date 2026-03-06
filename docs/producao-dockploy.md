@@ -12,7 +12,7 @@ Subir este projeto Laravel em produção usando:
 ## Resumo Rápido
 Este repositório já está pronto para desenvolvimento, mas para produção precisa de:
 
-1. stack de produção (web + worker + db + redis) + MinIO externo;
+1. stack de produção (web + horizon + scheduler + db + redis) + MinIO externo;
 2. imagem de produção (sem Sail);
 3. variáveis de ambiente corretas;
 4. política de deploy segura (rodar migration, evitar seed automático).
@@ -71,7 +71,7 @@ Se quiser um domínio alternativo de acesso (opcional), faça **2**:
 Serviços no `docker-compose.prod.yml` (app principal):
 
 - `app` (web)
-- `worker` (fila)
+- `horizon` (fila + monitoramento visual em `/horizon`)
 - `scheduler` (agendador; pode ficar ativo mesmo sem tarefas críticas)
 - `mysql`
 - `redis`
@@ -152,6 +152,26 @@ Regra segura:
 - `DIARIOS_URL` (se usar URL pública direta do bucket)
 - `DIARIOS_PUBLIC_ENDPOINT` (se endpoint interno do MinIO diferir do público)
 - `SCRIBE_ADD_ROUTES=false`
+
+### Recomendadas para PDFs grandes (fila robusta)
+- `PDF_PROCESS_QUEUE=pdf-heavy`
+- `PDF_PROCESS_MEMORY_LIMIT=2048M`
+- `PDF_PROCESS_MAX_EXECUTION_TIME=1800`
+- `PDF_PROCESS_PAGE_CHUNK_SIZE=20`
+- `PDF_PROCESS_JOB_TIMEOUT=1800`
+- `PDF_PROCESS_JOB_TRIES=3`
+- `HORIZON_QUEUES=default,pdf-heavy,pdf-processing`
+- `HORIZON_TIMEOUT=1800`
+- `HORIZON_WORKER_MEMORY_MB=2048`
+- `HORIZON_MAX_PROCESSES=3`
+- `HORIZON_MIN_PROCESSES=1`
+
+### Watchdog de travamento
+- `PDF_WATCHDOG_STUCK_MINUTES=20`
+- `PDF_WATCHDOG_MAX_RETRIES=3`
+- `PDF_WATCHDOG_AUTO_REQUEUE=true`
+
+Com o `scheduler` ativo, o comando `diarios:watchdog-processamentos` roda automaticamente a cada 5 minutos.
 
 ## MinIO em Projeto Separado (Dockploy)
 
@@ -339,7 +359,7 @@ Quando refatorarmos essas rotas para controllers, aí sim pode ativar:
    - `/admin`
    - login
    - upload de PDF
-   - fila processando (`worker`)
+   - fila processando (`horizon`)
 6. Só depois ativar autodeploy em produção
 
 ## Estratégia de Autodeploy (pragmática)
@@ -365,7 +385,7 @@ Isso funciona, mas recomendo mínimo de disciplina:
 - [ ] `APP_DEBUG=false`
 - [ ] `APP_KEY` definido
 - [ ] `QUEUE_CONNECTION=redis`
-- [ ] `worker` ativo
+- [ ] `horizon` ativo (`php artisan horizon:status`)
 - [ ] MinIO externo ativo + bucket `diarios` criado
 - [ ] `SCRIBE_ADD_ROUTES=false`
 - [ ] post-deploy rodando `migrate --force`
