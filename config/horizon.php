@@ -9,6 +9,12 @@ if ($horizonQueues === []) {
     $horizonQueues = ['default', 'pdf-heavy', 'pdf-processing'];
 }
 
+$horizonConnection = trim((string) env('HORIZON_QUEUE_CONNECTION', (string) env('QUEUE_CONNECTION', 'redis')));
+
+if ($horizonConnection === '') {
+    $horizonConnection = 'redis';
+}
+
 return [
 
     'domain' => env('HORIZON_DOMAIN'),
@@ -22,7 +28,7 @@ return [
     'middleware' => ['web'],
 
     'waits' => [
-        'redis:default' => (int) env('HORIZON_WAIT_DEFAULT', 60),
+        $horizonConnection . ':default' => (int) env('HORIZON_WAIT_DEFAULT', 60),
     ],
 
     'trim' => [
@@ -46,7 +52,7 @@ return [
 
     'defaults' => [
         'supervisor-main' => [
-            'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
+            'connection' => $horizonConnection,
             'queue' => $horizonQueues,
             'balance' => env('HORIZON_BALANCE', 'auto'),
             'autoScalingStrategy' => 'time',
